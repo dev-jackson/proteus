@@ -33,7 +33,12 @@ newest_dmg() {
 }
 
 TARGET="${1:-$(newest_dmg)}"
-[ -n "$TARGET" ] && [ -f "$TARGET" ] || { echo "usage: $0 <path to the .dmg>" >&2; exit 2; }
+# Written out rather than `A && B || C`: in that form C also runs when A
+# succeeds and B fails, which is not what anyone reading it expects.
+if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
+  echo "usage: $0 <path to the .dmg>   (build one with ./scripts/package.sh)" >&2
+  exit 2
+fi
 
 ok()  { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[31m✗\033[0m %s\n' "$*"; }

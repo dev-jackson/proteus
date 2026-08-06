@@ -18,4 +18,23 @@ modified, redistributed or relicensed here: Proteus fetches them, configures
 them and gets out of the way.
 
 The Swift in this repository — the analysis, the verification, the repair loop,
-the app — is the part that is MIT licensed and original.
+the app — is the original part, and it is **GPL-3.0-or-later**. See
+[LICENSE](LICENSE).
+
+## Why shipping nothing makes the licensing simple
+
+Combining GPL code with someone else's in one binary raises real questions
+about what the result may be distributed under. Proteus never gets there. The
+`.dmg` you download contains only this repository's own code. Wine and the rest
+arrive later, separately, onto the machine that will run them, and Proteus
+calls them as ordinary programs.
+
+That is the same relationship a shell has with the commands it runs, and it is
+the reason a GPL project can drive an LGPL emulator without either side having
+to answer for the other.
+
+## Downloading is a choice the user makes
+
+Proteus asks before fetching anything, says how large it is, and says what it
+is for. Nothing arrives silently. If Sikarugir or Kegworks is already installed,
+their copies are reused and nothing is downloaded at all.
