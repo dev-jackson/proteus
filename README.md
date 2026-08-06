@@ -3,29 +3,41 @@
 **Windows games on your Mac. Drop the file, get an app.**
 **Juegos de Windows en tu Mac. Suelta el archivo, obtén una app.**
 
+> Proteus was the sea god who changed form at will — a lion, a serpent, water,
+> fire, whatever the moment asked. "Protean" comes from him. A Windows game
+> becoming a Mac app is the same trick.
+
 ---
 
 ## English
 
-You drop an `.exe`, an `.iso`, a `.zip` or a game folder on the window.
-Proteus reads the game, works out what it needs, installs it, and leaves a
-normal app in `/Applications` with the game's own icon. Then it starts the
-game once to make sure it actually works before telling you it's ready.
+Drop an `.exe`, an `.iso`, a `.zip` or a game folder on the window. Proteus
+reads the game, works out what it needs, installs it, and leaves an ordinary
+app in `/Applications` with the game's own icon.
 
-That's the whole product. There is no bottle to create, no prefix to name, no
-winetricks verb to look up, no DLL override to guess, no wrapper to configure.
+Then it starts the game, watches for a window, looks at the frame it drew, and
+sends real keyboard and mouse events to check they arrive — before telling you
+it is ready.
+
+**It does not promise your game will work. It promises to tell you the truth
+about whether it does, and to fix what it can without you learning anything.**
 
 ### Why this exists
 
-Everything that runs Windows games on macOS today — Wineskin, Kegworks,
-Sikarugir, Bottles, Porting Kit, raw Wine — asks you to be the integrator.
-You create a "bottle". You pick a "engine". You guess whether the game wants
-`vcrun2019` or `vcrun2022`. You choose between WineD3D, DXVK, DXMT and
-D3DMetal without being told which one your game can even use. You find out
-you guessed wrong when the game silently does nothing.
+Everything else in this space asks you to be the integrator. Create a bottle.
+Pick an engine. Guess whether the game wants `vcrun2019` or `vcrun2022`. Choose
+between WineD3D, DXVK, DXMT and D3DMetal without being told which one your game
+can even use. Find out you guessed wrong when the game silently does nothing.
 
-Proteus inverts that. **The program already knows what it needs — it's written
-in its import table.** So Proteus reads it instead of asking you.
+Proton — by far the most successful compatibility layer ever shipped — does not
+detect anything either: it bundles translation layers and relies on
+`protonfixes`, a table of hand-written patches, plus players reporting results.
+When a game fails, the documented procedure is for *you* to set `PROTON_LOG=1`,
+reproduce the crash and read the log.
+
+**A Windows executable already declares most of what it needs.** Proteus reads
+it instead of asking you. See [docs/ALGORITHM.md](docs/ALGORITHM.md) for how,
+and where it runs out.
 
 ### What it actually does that others don't
 
