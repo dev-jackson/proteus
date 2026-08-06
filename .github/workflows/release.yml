@@ -1,0 +1,135 @@
+# Publishes a release when a version tag is pushed.
+#
+#   echo 0.2.0 > VERSION
+#   git commit -am "0.2.0 — …" && git tag -a v0.2.0 -m "…"
+#   git push origin main --tags
+#
+# The point is to shorten the gap between "fixed" and "installable". That gap
+# is where people give up on a tool, and it is entirely self-inflicted when the
+# release is done by hand.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  # Lets a release be rebuilt without moving the tag, which is what you want
+  # when the build failed rather than the code.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      # The tag says one version and the code says another often enough that it
+      # is worth failing here rather than shipping the mismatch.
+      - name: The tag and the code must agree
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          CODE="v$(tr -d '[:space:]' < VERSION)"
+          echo "tag: $TAG   code: $CODE"
+          [ "$TAG" = "$CODE" ] || {
+            echo "::error::Tag $TAG does not match VERSION ($CODE)"
+            exit 1
+          }
+
+      - name: Tests
+        run: swift test
+
+      - name: Build the .dmg
+        run: ./scripts/package.sh
+
+      # Signing, notarising and stapling: the difference between a .dmg that
+      # opens on someone else's Mac and one that does nothing when double
+      # clicked, silently. Without the secrets the script says what is missing
+      # and exits cleanly, so a fork with no certificate still gets a release.
+      # See docs/SIGNING.md.
+      - name: Sign and notarise
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASS: ${{ secrets.MACOS_CERTIFICATE_PASS }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+        run: ./scripts/sign-macos.sh
+
+      # The certificate must not outlive the job on a shared machine. The
+      # script wipes its own keychain; this wipes it again in case the script
+      # died before it could.
+      - name: Leave no certificate behind
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/proteus-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+      # A checksum is the only way someone can tell that what they downloaded
+      # is what was built here.
+      - name: Checksum
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 ./*.dmg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+
+  publish:
+    needs: macos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: dist
+
+      # Whether the .dmg was notarised decides what the release notes are
+      # allowed to promise. Claiming it opens cleanly when it does not is how
+      # people conclude the app is broken.
+      - name: Write the release notes
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          {
+            echo "## Install"
+            echo
+            echo "Download the \`.dmg\`, open it, drag **Proteus** to Applications."
+            echo
+            echo "Requires macOS 14 or later, on Apple silicon or Intel."
+            echo
+            echo "### Checksums"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+            echo
+            echo "Proteus is free software under the GPL v3. The source of this"
+            echo "build is the \`$TAG\` tag of this repository."
+          } > notes.md
+          cat notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Proteus ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: notes.md
+          files: dist/*
+          fail_on_unmatched_files: true

@@ -1,10 +1,17 @@
 # Build products
 .build/
 build/
+dist/
 *.xcodeproj
 
 # Test games are downloaded, not committed: half a gigabyte of other
 # people's binaries has no business in a source repository.
 test-games/
+
+# Never, under any circumstances. See docs/SIGNING.md — a private repository
+# can be made public by accident, and git history keeps a deleted file forever.
+*.p12
+*.certSigningRequest
+*.key
 
 .DS_Store

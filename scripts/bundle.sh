@@ -5,6 +5,9 @@ set -euo pipefail
 
 CONFIG="${1:-release}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# One place holds the version. The release workflow refuses to build a tag
+# that disagrees with it, so a shipped app can never claim the wrong number.
+VERSION="$(tr -d "[:space:]" < "$ROOT/VERSION")"
 OUT="$ROOT/build/Proteus.app"
 
 cd "$ROOT"
@@ -33,7 +36,7 @@ swift "$ROOT/scripts/make-icon.swift" "$ICONSET" >/dev/null
 iconutil -c icns "$ICONSET" -o "$OUT/Contents/Resources/Proteus.icns"
 rm -rf "$ICONSET"
 
-cat > "$OUT/Contents/Info.plist" <<'PLIST'
+cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -44,11 +47,11 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key><string>com.proteus.app</string>
     <key>CFBundleIconFile</key><string>Proteus</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>Proteus</string>
+    <key>NSHumanReadableCopyright</key><string>Copyright (C) 2026 Jackson Sánchez Rodríguez. GPL-3.0-or-later.</string>
     <!-- Accept a game dropped straight onto the Dock icon. -->
     <key>CFBundleDocumentTypes</key>
     <array>
@@ -68,7 +71,10 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Ad-hoc signature: without it macOS refuses to run an unsigned arm64 bundle.
+# Ad-hoc signature, so the app runs on the machine that built it: macOS
+# refuses to launch an unsigned arm64 bundle at all. It is NOT enough for
+# anyone else — a download stays quarantined until scripts/sign-macos.sh
+# replaces this with a Developer ID signature and Apple has notarised it.
 codesign --force --deep --sign - "$OUT" 2>/dev/null || true
 
 echo "✓ $OUT"

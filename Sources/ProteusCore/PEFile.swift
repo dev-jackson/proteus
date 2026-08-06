@@ -1,3 +1,12 @@
+// Proteus — Windows games on macOS, without the ceremony.
+// Copyright (C) 2026 Jackson Sánchez Rodríguez
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option)
+// any later version. It is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY. See <https://www.gnu.org/licenses/>.
+
 import Foundation
 
 /// Minimal PE/COFF reader. We only need four things out of a Windows binary:
@@ -70,7 +79,7 @@ public struct PEFile: Sendable {
         let rawSize: UInt32
     }
 
-    public enum ParseError: Error, CustomStringConvertible {
+    public enum ParseError: Error, Equatable, CustomStringConvertible {
         case tooSmall
         case notMZ
         case notPE

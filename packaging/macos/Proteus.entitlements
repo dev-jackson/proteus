@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Notarisation requires the hardened runtime, and the hardened runtime forbids
+  by default nearly everything a Windows emulator has to do. Each exception
+  below is here because without it a notarised Proteus would launch and then
+  fail to run a single game — which is a worse outcome than not being notarised
+  at all, because it fails silently and late.
+
+  Nothing here is a blanket weakening: every entry is the narrowest Apple
+  offers for the thing it permits.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Wine is downloaded at runtime, not shipped inside this bundle, so its
+         dylibs are not covered by our signature. Library validation would
+         refuse to load them and every game would die at startup. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Wine and DXMT translate x86 code and shaders into instructions written
+         into memory and then executed. That is the definition of JIT, and it
+         is the entire mechanism by which a Windows game runs here at all. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Wine positions its own loader with DYLD_FALLBACK_LIBRARY_PATH before
+         handing control to the Windows process. Stripped, wine cannot find its
+         own libraries. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- Games are placed wherever the person keeps them, and their saved games
+         live in Application Support. Proteus is a file-handling tool; a
+         sandbox that could not read a dropped .iso would have no purpose. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

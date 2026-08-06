@@ -3,9 +3,26 @@
 **Windows games on your Mac. Drop the file, get an app.**
 **Juegos de Windows en tu Mac. Suelta el archivo, obtén una app.**
 
+[![build](https://github.com/dev-jackson/proteus/actions/workflows/build.yml/badge.svg)](https://github.com/dev-jackson/proteus/actions/workflows/build.yml)
+[![licence: GPL v3](https://img.shields.io/badge/licence-GPL%20v3-blue.svg)](LICENSE)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black.svg)](#requirements)
+
 > Proteus was the sea god who changed form at will — a lion, a serpent, water,
 > fire, whatever the moment asked. "Protean" comes from him. A Windows game
 > becoming a Mac app is the same trick.
+
+## Install · Instalar
+
+Download the latest `.dmg` from
+[**Releases**](https://github.com/dev-jackson/proteus/releases/latest), open it,
+drag **Proteus** to Applications. It is signed and notarised by Apple, so it
+opens on a double click — no right-click-Open, no terminal, no
+`xattr -d com.apple.quarantine`.
+
+Descarga el `.dmg` desde
+[**Releases**](https://github.com/dev-jackson/proteus/releases/latest), ábrelo y
+arrastra **Proteus** a Aplicaciones. Está firmado y notarizado por Apple, así que
+se abre con doble clic: sin clic derecho, sin terminal, sin trucos.
 
 ---
 
@@ -180,14 +197,37 @@ proteus uninstall "Mi Juego"
 
 ---
 
-## License / Licencia
+## Contributing
 
-Proteus builds on [Sikarugir](https://github.com/Sikarugir-App/Sikarugir) for
-its wrapper template and Wine engines, and on
-[Winetricks](https://github.com/Winetricks/winetricks) for component
-installation. Both are used unmodified and keep their own licences.
+Bug reports, and especially reports of games that do not work, are the most
+useful thing anyone can send. Right click the game in Proteus → **Copy
+diagnostic report**, and open an issue with it.
 
-Proteus se apoya en [Sikarugir](https://github.com/Sikarugir-App/Sikarugir)
-para la plantilla y los motores de Wine, y en
-[Winetricks](https://github.com/Winetricks/winetricks) para instalar
-componentes. Ambos se usan sin modificar y conservan sus licencias.
+See [CONTRIBUTING.md](CONTRIBUTING.md). There is one rule: never claim a game
+works without having watched it work.
+
+## Licence / Licencia
+
+Proteus is free software under the **GNU General Public License, version 3 or
+later**. See [LICENSE](LICENSE).
+
+That choice is deliberate. Anyone may use, study, change and redistribute this,
+and any distributed version must arrive with the same freedoms — so nobody,
+including its author, can take a later version of it closed.
+
+Proteus es software libre bajo la **GPL v3 o posterior**. Cualquiera puede
+usarlo, estudiarlo, modificarlo y redistribuirlo, y toda versión distribuida
+debe llegar con las mismas libertades: nadie, ni su autor, puede cerrar una
+versión posterior.
+
+### What it does not bundle
+
+Proteus ships no third-party code. The Wine engine, the wrapper template
+([Sikarugir](https://github.com/Sikarugir-App/Sikarugir)), DXMT and
+[Winetricks](https://github.com/Winetricks/winetricks) are downloaded onto your
+machine on first use, the way Homebrew fetches a formula, and are used
+unmodified under their own licences. See [THIRD-PARTY.md](THIRD-PARTY.md).
+
+Proteus no empaqueta código de terceros: el motor de Wine, la plantilla, DXMT y
+Winetricks se descargan en tu máquina la primera vez, sin modificar y bajo sus
+propias licencias.

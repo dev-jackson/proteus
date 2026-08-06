@@ -1,3 +1,12 @@
+// Proteus — Windows games on macOS, without the ceremony.
+// Copyright (C) 2026 Jackson Sánchez Rodríguez
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option)
+// any later version. It is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY. See <https://www.gnu.org/licenses/>.
+
 import Foundation
 
 /// Reads what can be known about a Windows Installer package before running it.
