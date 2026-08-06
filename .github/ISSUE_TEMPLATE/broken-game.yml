@@ -1,0 +1,85 @@
+# A game that does not work is the most useful thing anyone can send: it is the
+# only way the detection algorithm learns about the world outside one laptop.
+# The fields exist so nobody has to be asked for the same six things, one round
+# trip at a time, before anything can be looked at.
+name: A game does not work
+description: Proteus installed a game and it fails, or it never installed at all
+title: "[game] "
+labels: ["game report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you — this is the most useful kind of report this project gets.
+
+        **Start with the diagnostic report.** In Proteus, right click the game →
+        **Copy diagnostic report**, and paste it below. It carries the graphics
+        translation that was chosen, the Wine engine, the launch flags, your
+        macOS version and the filtered tail of the last run. That is everything
+        that would otherwise be asked for one question at a time.
+
+  - type: input
+    id: game
+    attributes:
+      label: Which game
+      placeholder: "Warzone 2100 4.5.6"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Where it came from
+      options:
+        - Steam
+        - GOG
+        - itch.io
+        - A disc or ISO
+        - The developer's own site
+        - Somewhere else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where it went wrong
+      options:
+        - Proteus could not read the file at all
+        - Installing failed or never finished
+        - It installed, but the game does nothing when opened
+        - The game opens but the picture is wrong
+        - The game opens but does not respond to keyboard or mouse
+        - It ran, then crashed later
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: seen
+    attributes:
+      label: What you saw
+      description: >
+        Plain words are fine. "Nothing happened" is a good bug report — it is
+        the exact failure this project exists to eliminate.
+    validations:
+      required: true
+
+  - type: textarea
+    id: report
+    attributes:
+      label: The diagnostic report
+      description: Right click the game in Proteus → Copy diagnostic report → paste here.
+      render: text
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        Screenshots help a great deal when the picture is wrong — colours that
+        look wrong on a screen are almost impossible to describe in words.
+
+        A note on what cannot be fixed: games with kernel-level anti-cheat do
+        not run on macOS at all, by any means, and nothing here will change
+        that.

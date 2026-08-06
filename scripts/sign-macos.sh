@@ -29,7 +29,21 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET="${1:-$(ls -t "$ROOT"/dist/Proteus-*.dmg 2>/dev/null | head -1)}"
+# The newest built .dmg, chosen without parsing `ls` output: a filename is
+# bytes, and one containing a newline would be read as two files. The glob
+# hands back real paths and `-nt` asks the filesystem which is newer.
+newest_dmg() {
+  local newest="" candidate
+  for candidate in "$ROOT"/dist/Proteus-*.dmg; do
+    [ -f "$candidate" ] || continue
+    if [ -z "$newest" ] || [ "$candidate" -nt "$newest" ]; then
+      newest="$candidate"
+    fi
+  done
+  printf '%s' "$newest"
+}
+
+TARGET="${1:-$(newest_dmg)}"
 ENTITLEMENTS="$ROOT/packaging/macos/Proteus.entitlements"
 
 if [ -z "$TARGET" ] || [ ! -e "$TARGET" ]; then
