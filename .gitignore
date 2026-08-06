@@ -1,0 +1,10 @@
+# Build products
+.build/
+build/
+*.xcodeproj
+
+# Test games are downloaded, not committed: half a gigabyte of other
+# people's binaries has no business in a source repository.
+test-games/
+
+.DS_Store
