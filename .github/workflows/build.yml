@@ -19,7 +19,7 @@ jobs:
     name: The workflows themselves
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: raven-actions/actionlint@v2
 
   # Every script here is run by hand at some point, several of them while
@@ -29,14 +29,14 @@ jobs:
     name: The shell scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: shellcheck scripts/*.sh
 
   macos:
     name: Build and test
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
@@ -76,7 +76,7 @@ jobs:
           echo "VERSION: $FILE   bundle: $PLIST"
           [ "$FILE" = "$PLIST" ] || { echo "::error::they disagree"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Proteus-app-unsigned
           path: build/Proteus.app
