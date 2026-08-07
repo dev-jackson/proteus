@@ -45,15 +45,30 @@ App-Specific Passwords → **+**. It looks like `abcd-efgh-ijkl-mnop`.
 
 **3. Put it in the keychain, not in a file.**
 
+With the password still on your clipboard:
+
 ```bash
-xcrun notarytool store-credentials proteus \
-  --apple-id you@example.com --team-id YOURTEAMID
+./scripts/notary-setup.sh you@example.com
 ```
 
-It asks for the app-specific password and stores it in your login keychain
-under the name `proteus`. From then on nothing needs the password again — no
-script reads it, no environment variable holds it, and it never reaches your
-shell history.
+It checks the clipboard holds something shaped like an app-specific password,
+reads your team id off the certificate, and hands the password straight to
+Apple's own tool, which stores it in your login keychain under the name
+`proteus`. The script never prints it, never writes it anywhere, and never puts
+it on a command line you typed — so it does not reach your shell history
+either.
+
+From then on nothing asks for the password again.
+
+> **The keychain, and not a file.** It is encrypted at rest, unlocked by your
+> login, and it survives reboots and reinstalls, which is exactly what "keep it
+> somewhere it will not get lost" means. A password in a text file is one
+> careless `git add` away from being permanent and public, and an
+> app-specific password that has been pasted anywhere it might be read — a
+> chat, a ticket, a screenshot — should be revoked at
+> [account.apple.com](https://account.apple.com) and replaced. Revoking one
+> costs nothing: it takes ten seconds to make another, and it affects nothing
+> else on the account.
 
 > If you already notarise another app from the same Apple account, you have a
 > working profile under another name. `scripts/sign-macos.sh` will find and use
