@@ -1,12 +1,18 @@
-# Publishes a release when a version tag is pushed.
+# Builds a tagged version, and publishes it *if* this repository can sign.
 #
-#   echo 0.2.0 > VERSION
-#   git commit -am "0.2.0 — …" && git tag -a v0.2.0 -m "…"
-#   git push origin main --tags
+# ## The normal path is not this file
 #
-# The point is to shorten the gap between "fixed" and "installable". That gap
-# is where people give up on a tool, and it is entirely self-inflicted when the
-# release is done by hand.
+#   ./scripts/release.sh
+#
+# That builds, signs, notarises, verifies, tags and publishes from a Mac that
+# already holds the certificate and the notary profile. Signing in CI means
+# exporting the certificate and its password into a shared runner's secrets to
+# save four minutes on a laptop that already has both, which is a bad trade.
+#
+# So this workflow exists for two reasons and no others: to prove a tag still
+# builds and passes its tests on a clean machine, and to take over the whole
+# release if someone does set the signing secrets — a fork, a second
+# maintainer, or a future where releases stop going through one laptop.
 name: release
 
 on:
@@ -26,6 +32,8 @@ permissions:
 jobs:
   macos:
     runs-on: macos-15
+    outputs:
+      signed: ${{ steps.capability.outputs.signed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,12 +61,29 @@ jobs:
       - name: Build the .dmg
         run: ./scripts/package.sh
 
-      # Signing, notarising and stapling: the difference between a .dmg that
-      # opens on someone else's Mac and one that does nothing when double
-      # clicked, silently. Without the secrets the script says what is missing
-      # and exits cleanly, so a fork with no certificate still gets a release.
-      # See docs/SIGNING.md.
+      # Decided once, up front, so every later step agrees about it. Without a
+      # certificate this run is a build check and says so — it is not a failure,
+      # because a fork cannot have one and must not be blocked by that.
+      - name: Can this runner sign?
+        id: capability
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE }}
+          PASS: ${{ secrets.MACOS_CERTIFICATE_PASS }}
+          APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          NOTARY_PASS: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CERT" ] && [ -n "$PASS" ] && [ -n "$APPLE_ID" ] && [ -n "$NOTARY_PASS" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets are present: this run will publish."
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing secrets. This run checks the build only."
+            echo "::notice::Publish from a Mac with the certificate: ./scripts/release.sh"
+          fi
+
       - name: Sign and notarise
+        if: steps.capability.outputs.signed == 'true'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASS: ${{ secrets.MACOS_CERTIFICATE_PASS }}
@@ -77,24 +102,22 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/proteus-signing.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/certificate.p12"
 
-      # The guard that matters. Everything above can succeed and still leave a
-      # .dmg that does nothing when a stranger double clicks it — which is the
-      # exact failure this project exists to eliminate, so publishing one would
-      # be worse than publishing nothing. Asked of the artefact, with the
-      # quarantine attribute a browser writes, not of the build that made it.
+      # The guard that matters. Signing can succeed and still leave a .dmg that
+      # does nothing when a stranger double clicks it — the exact failure this
+      # project exists to eliminate, so publishing one would be worse than
+      # publishing nothing.
       - name: It has to open on someone else's Mac
+        if: steps.capability.outputs.signed == 'true'
         run: |
           set -euo pipefail
           if ./scripts/verify-macos-download.sh; then
             exit 0
           fi
           echo "::error::This .dmg would not open for anyone who downloaded it."
-          echo "Set the six signing secrets — see docs/SIGNING.md — and re-run."
           exit 1
 
-      # A checksum is the only way someone can tell that what they downloaded
-      # is what was built here.
       - name: Checksum
+        if: steps.capability.outputs.signed == 'true'
         run: |
           set -euo pipefail
           cd dist
@@ -108,6 +131,10 @@ jobs:
 
   publish:
     needs: macos
+    # Only when the artefact is one a stranger could actually open. Otherwise
+    # the release was cut from a Mac by ./scripts/release.sh and there is
+    # nothing here to add.
+    if: needs.macos.outputs.signed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -116,9 +143,6 @@ jobs:
           name: macos
           path: dist
 
-      # Whether the .dmg was notarised decides what the release notes are
-      # allowed to promise. Claiming it opens cleanly when it does not is how
-      # people conclude the app is broken.
       - name: Write the release notes
         run: |
           set -euo pipefail
@@ -136,8 +160,7 @@ jobs:
             cat dist/SHA256SUMS.txt
             echo '```'
             echo
-            echo "Proteus is free software under the GPL v3. The source of this"
-            echo "build is the \`$TAG\` tag of this repository."
+            echo "Free software under the GPL v3. Built from the \`$TAG\` tag."
           } > notes.md
           cat notes.md
 

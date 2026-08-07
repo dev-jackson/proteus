@@ -164,11 +164,26 @@ then build, sign, notarise and staple the `.dmg` around it. It roughly doubles
 release time for an edge case, so it is not done here. If it ever becomes a
 real complaint, that is the fix.
 
-## Doing it in CI
+## Cutting a release
 
-`.github/workflows/release.yml` runs the same script on a tag. It needs six
-repository secrets, and without them it prints what is missing and exits
-cleanly, so a fork with no certificate still gets a release.
+From the Mac that has the certificate — which is the normal way:
+
+```bash
+./scripts/release.sh
+```
+
+It refuses on uncommitted changes, an existing tag, or a branch that disagrees
+with its remote; then tests, builds, signs, notarises, staples, checks the
+download would open for a stranger, tags, and publishes. If any of that says no,
+nothing is released.
+
+## Doing it in CI instead
+
+`.github/workflows/release.yml` runs on a tag. Without the signing secrets it
+builds and tests and stops there, saying so as a notice rather than a failure —
+a fork cannot have a certificate and must not be blocked by that.
+
+Give it the six secrets below and it takes over the whole release instead.
 
 | Secret | What it is |
 |---|---|
