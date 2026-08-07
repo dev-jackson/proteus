@@ -77,6 +77,21 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/proteus-signing.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/certificate.p12"
 
+      # The guard that matters. Everything above can succeed and still leave a
+      # .dmg that does nothing when a stranger double clicks it — which is the
+      # exact failure this project exists to eliminate, so publishing one would
+      # be worse than publishing nothing. Asked of the artefact, with the
+      # quarantine attribute a browser writes, not of the build that made it.
+      - name: It has to open on someone else's Mac
+        run: |
+          set -euo pipefail
+          if ./scripts/verify-macos-download.sh; then
+            exit 0
+          fi
+          echo "::error::This .dmg would not open for anyone who downloaded it."
+          echo "Set the six signing secrets — see docs/SIGNING.md — and re-run."
+          exit 1
+
       # A checksum is the only way someone can tell that what they downloaded
       # is what was built here.
       - name: Checksum

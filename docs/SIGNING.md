@@ -140,6 +140,30 @@ asks Gatekeeper about *the copy*. That is the difference between "it works on
 the machine that built it" — which it always does — and "it works for someone
 who downloaded it".
 
+### The ticket is stapled to the .dmg, not to the .app inside it
+
+Deliberate, and worth knowing before it surprises someone:
+
+```
+$ stapler validate Proteus.app
+Proteus.app does not have a ticket stapled to it.
+```
+
+That is expected. The `.dmg` is the artefact that gets downloaded and the one
+Gatekeeper judges, so that is what carries the ticket. The app inside is signed
+and notarised — Apple records the notarisation against the signature itself —
+but the ticket is not embedded in it.
+
+In practice this only matters in one case: dragging the app out of the disk
+image and launching it for the first time **while offline**. Gatekeeper then
+cannot reach Apple to confirm the notarisation and may refuse. Anyone who has
+just downloaded the file is online, so it rarely comes up.
+
+Closing that gap means notarising twice — submit a zipped `.app`, staple it,
+then build, sign, notarise and staple the `.dmg` around it. It roughly doubles
+release time for an edge case, so it is not done here. If it ever becomes a
+real complaint, that is the fix.
+
 ## Doing it in CI
 
 `.github/workflows/release.yml` runs the same script on a tag. It needs six
