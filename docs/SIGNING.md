@@ -74,6 +74,45 @@ From then on nothing asks for the password again.
 > working profile under another name. `scripts/sign-macos.sh` will find and use
 > it, because a profile is credentials for an account, not for a product.
 
+### Where the password actually ends up
+
+Not where you would look for it. `notarytool` uses the **data-protection
+keychain**, so the entry does not appear in Keychain Access and
+`security dump-keychain` will not find it either. It is in:
+
+```
+~/Library/Keychains/<UUID>/keychain-2.db     # mode 0600, yours alone
+```
+
+Which means the only honest way to check it is still there is to use it:
+
+```bash
+xcrun notarytool history --keychain-profile proteus
+```
+
+If that prints a submission history, the credentials are stored and valid. If
+it errors, they are not, whatever any file on disk suggests.
+
+### Losing it is not a disaster
+
+Worth saying plainly, because signing keys have trained everyone to panic.
+
+An app-specific password is **replaceable**. If it is lost, leaked, or pasted
+somewhere it should not have been, you revoke it at
+[account.apple.com](https://account.apple.com) and create another in about ten
+seconds. Nothing that was already notarised is affected — a stapled ticket
+stays valid forever, and it does not care how it was obtained.
+
+This is the opposite of an Android signing key, where losing it means you can
+never update the app again. Nothing here has that property, which is exactly
+why a password should never be copied into a text file "so it does not get
+lost". The copy is a permanent risk protecting against a ten-second
+inconvenience.
+
+The **certificate** is the part with real value, and it does not live here: it
+is in your login keychain, backed up by Time Machine, and reissuable from the
+developer account if the Mac dies.
+
 ### Every release
 
 ```bash
