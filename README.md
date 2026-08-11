@@ -1,93 +1,103 @@
-# Proteus
+<div align="center">
 
-**Windows games on your Mac. Drop the file, get an app.**
-**Juegos de Windows en tu Mac. Suelta el archivo, obtén una app.**
+<img src="docs/images/social-card.png" alt="Proteus — Windows games on your Mac. Drop the file, get an app." width="720">
 
 [![build](https://github.com/dev-jackson/proteus/actions/workflows/build.yml/badge.svg)](https://github.com/dev-jackson/proteus/actions/workflows/build.yml)
 [![licence: GPL v3](https://img.shields.io/badge/licence-GPL%20v3-blue.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black.svg)](#requirements)
+[![download](https://img.shields.io/github/v/release/dev-jackson/proteus?label=download&color=2ea44f)](https://github.com/dev-jackson/proteus/releases/latest)
 
-> Proteus was the sea god who changed form at will — a lion, a serpent, water,
-> fire, whatever the moment asked. "Protean" comes from him. A Windows game
-> becoming a Mac app is the same trick.
+**[Download for macOS](https://github.com/dev-jackson/proteus/releases/latest)**  ·  [Español](README.es.md)  ·  [How it works](docs/ALGORITHM.md)
 
-## Install · Instalar
-
-Download the latest `.dmg` from
-[**Releases**](https://github.com/dev-jackson/proteus/releases/latest), open it,
-drag **Proteus** to Applications. It is signed and notarised by Apple, so it
-opens on a double click — no right-click-Open, no terminal, no
-`xattr -d com.apple.quarantine`.
-
-Descarga el `.dmg` desde
-[**Releases**](https://github.com/dev-jackson/proteus/releases/latest), ábrelo y
-arrastra **Proteus** a Aplicaciones. Está firmado y notarizado por Apple, así que
-se abre con doble clic: sin clic derecho, sin terminal, sin trucos.
+</div>
 
 ---
 
-## English
+Drop an `.exe`, an `.iso`, a `.zip` or a game folder on the window. Proteus reads
+the game, works out what it needs, installs it, and leaves an ordinary app in
+`/Applications` with the game's own icon.
 
-Drop an `.exe`, an `.iso`, a `.zip` or a game folder on the window. Proteus
-reads the game, works out what it needs, installs it, and leaves an ordinary
-app in `/Applications` with the game's own icon.
+No bottles. No prefixes. No winetricks verbs. No choosing between WineD3D, DXVK,
+DXMT and D3DMetal without being told which one your game can even use.
 
-Then it starts the game, watches for a window, looks at the frame it drew, and
-sends real keyboard and mouse events to check they arrive — before telling you
-it is ready.
+## It tells you what it found, and why
+
+<img src="docs/images/analysis.png" alt="Proteus showing what GZDoom needs, with the evidence for each line" width="820">
+
+Every line has evidence behind it. GZDoom imports **no** graphics library at
+all — read its import table and you would conclude it needs nothing. It loads
+`vulkan-1.dll` by name at run time, which is why that line is there.
+
+That is the whole idea: **a Windows executable already declares most of what it
+needs**, in structures that have not changed since the 1990s. Proteus reads them
+instead of asking you.
+
+## Then it checks, instead of hoping
+
+After installing, it starts the game, waits for a real window, looks at the
+frame it drew, and sends actual keyboard and mouse events to confirm they arrive
+— before telling you it is ready.
 
 **It does not promise your game will work. It promises to tell you the truth
 about whether it does, and to fix what it can without you learning anything.**
 
-### Why this exists
+<img src="docs/images/library.png" alt="The Proteus window with four installed games" width="820">
 
-Everything else in this space asks you to be the integrator. Create a bottle.
-Pick an engine. Guess whether the game wants `vcrun2019` or `vcrun2022`. Choose
-between WineD3D, DXVK, DXMT and D3DMetal without being told which one your game
-can even use. Find out you guessed wrong when the game silently does nothing.
+## Install
 
-Proton — by far the most successful compatibility layer ever shipped — does not
-detect anything either: it bundles translation layers and relies on
-`protonfixes`, a table of hand-written patches, plus players reporting results.
-When a game fails, the documented procedure is for *you* to set `PROTON_LOG=1`,
-reproduce the crash and read the log.
+Download the `.dmg` from [**Releases**](https://github.com/dev-jackson/proteus/releases/latest),
+open it, drag **Proteus** to Applications.
 
-**A Windows executable already declares most of what it needs.** Proteus reads
-it instead of asking you. See [docs/ALGORITHM.md](docs/ALGORITHM.md) for how,
-and where it runs out.
+Signed with a Developer ID and notarised by Apple, so it opens on a double
+click — no right-click-Open, no terminal, no `xattr -d com.apple.quarantine`.
 
-### What it actually does that others don't
+## How it compares
 
-| | Proteus | The others |
+|  | Proteus | Wineskin · Kegworks · Bottles · Porting Kit |
 |---|---|---|
-| Dependency detection | Reads the PE import table of the game binary and maps each imported DLL to the exact runtime it needs | You pick verbs from a list |
-| Graphics backend | Chosen from what the game imports (`d3d12.dll` → D3DMetal, `d3d11.dll` → DXMT, `d3d9.dll` → WineD3D) | You pick from a dropdown |
-| Which .exe is the game | Scored by size, depth, GUI subsystem, icon presence, graphics imports, and `autorun.inf` | You browse and pick |
-| Installers | Fingerprints NSIS / Inno Setup / InstallShield / MSI and uses the correct silent flags | You click through the wizard inside a fake Windows |
-| ISOs | Mounted, `autorun.inf` parsed, disc name used, redistributable folders ignored | You mount it yourself |
-| Icon | Extracted from the executable's resource tree and converted to `.icns`, pixel-art upscaled without blurring | Generic Wine glass |
-| Verification | **Starts the game and waits for a real window before saying "ready"** | Nobody does this |
-| Disk cost | Engine unpacked once and APFS-cloned into each app: ~365 MB per extra game | ~1.4 GB per game |
-| Uninstall | Drag the app to the Trash. Everything lived inside it | Bottles, prefixes and registry entries left behind |
+| Dependencies | Reads imports, delay imports, the manifest and libraries loaded at run time, then maps each to the exact runtime | You pick verbs from a list |
+| Graphics backend | Chosen from what the game actually uses (`d3d12` → D3DMetal, `d3d11` → DXMT, `d3d9` → WineD3D or DXVK) | You pick from a dropdown |
+| Which `.exe` is the game | Scored by size, depth, GUI subsystem, icon, graphics imports and `autorun.inf` | You browse and pick |
+| Installers | Fingerprints NSIS / Inno Setup / InstallShield / MSI and uses the right silent flags | You click through a wizard inside a fake Windows |
+| ISOs | Mounted, `autorun.inf` parsed, disc name used, redistributables ignored | You mount it yourself |
+| Icon | Extracted from the executable's resource tree, pixel art upscaled without blurring | Generic Wine glass |
+| Verification | **Starts it and confirms a window, a healthy picture and working input** | Nobody does this |
+| Disk cost | Engine unpacked once, APFS-cloned per game: ~365 MB each | ~1.4 GB per game |
+| Uninstall | Drag to the Trash. Everything lived inside the app | Bottles, prefixes and registry entries left behind |
 
-### Requirements
+Even Proton — by far the most successful compatibility layer ever shipped —
+does not detect anything. It bundles translation layers and relies on
+`protonfixes`, a table of hand-written per-game patches, plus players reporting
+results. When a game fails there, the documented procedure is for *you* to set
+`PROTON_LOG=1`, reproduce the crash and read the log.
 
-- macOS 14 or later, Apple Silicon or Intel
-- Nothing else. No Homebrew, no Xcode tools, no Rosetta prompt unless a
-  DirectX 12 game actually needs it.
+## Tested on
 
-The Wine engine (~166 MB) and wrapper template (~80 MB) download once, on
-first use. If you already have Sikarugir or Kegworks installed, Proteus reuses
-their copies and downloads nothing.
+Real installs, played interactively — not just launched.
 
-### Build and run
+| Game | Arrived as | Notes |
+|---|---|---|
+| Cave Story | `.exe` and `.iso` | 2D, keyboard only |
+| GZDoom + Freedoom | portable `.zip` | renderer found only in run-time strings |
+| OpenTTD | NSIS installer | silent install omits graphics; caught and repaired |
+| Warzone 2100 | Inno Setup, 991 MB | large install, progress reporting |
+| Steam | NSIS installer | needs `-no-cef-sandbox` |
+| 7-Zip | `.msi` | MSI path via `msiexec` |
 
-```bash
-./scripts/bundle.sh release
-open build/Proteus.app
-```
+Untested and honest about it: **InstallShield**, and **gamepads** — the code is
+there, but no physical controller has been through it. See
+[docs/TESTS.md](docs/TESTS.md), which records the failed hypotheses too.
 
-### Command line
+## Requirements
+
+macOS 14 or later, Apple silicon or Intel. Nothing else — no Homebrew, no Xcode
+tools, no Rosetta prompt unless a DirectX 12 game genuinely needs one.
+
+The Wine engine (~166 MB) and wrapper template (~80 MB) download once, on first
+use. If you already have Sikarugir or Kegworks, Proteus reuses their copies and
+downloads nothing.
+
+## Command line
 
 The same engine, without the window:
 
@@ -101,133 +111,51 @@ proteus uninstall "My Game"
 
 `inspect` never writes anything, so it is safe to run on anything.
 
-### Known limits
+## Known limits
 
-- A fullscreen game at 320×240 or 640×480 renders at its native size on a
-  black backdrop rather than scaling to fill the display. This is Wine's
-  display handling, not something Proteus can fix from outside.
-- Installers that download optional components only when a human clicks
-  through them (OpenTTD's graphics set is the classic case) will install but
-  arrive incomplete. Proteus's startup check catches this and `proteus fix`
-  re-runs the installer with its interface visible.
-- Games with kernel-level anti-cheat do not work, here or anywhere else on
-  macOS.
+- A fullscreen game at 320×240 or 640×480 draws at native size on a black
+  backdrop instead of scaling. That is Wine's display handling, not something
+  Proteus can fix from outside.
+- Installers that fetch optional content only when a human clicks through them
+  arrive incomplete. The startup check catches it; `proteus fix` re-runs the
+  installer with its interface visible.
+- Games with kernel-level anti-cheat do not work, here or anywhere else on macOS.
 
----
-
-## Español
-
-Sueltas un `.exe`, un `.iso`, un `.zip` o la carpeta del juego en la ventana.
-Proteus lee el juego, deduce lo que necesita, lo instala y deja una app normal
-en `/Aplicaciones` con el icono del propio juego. Luego arranca el juego una
-vez para comprobar que de verdad funciona antes de decirte que está listo.
-
-Eso es todo el producto. No hay que crear una "botella", ni nombrar un
-prefijo, ni buscar un verbo de winetricks, ni adivinar un override de DLL, ni
-configurar un wrapper.
-
-### Por qué existe
-
-Todo lo que hoy ejecuta juegos de Windows en macOS — Wineskin, Kegworks,
-Sikarugir, Bottles, Porting Kit, Wine a pelo — te pide ser el integrador.
-Creas una "botella". Eliges un "motor". Adivinas si el juego quiere
-`vcrun2019` o `vcrun2022`. Escoges entre WineD3D, DXVK, DXMT y D3DMetal sin
-que nadie te diga cuál puede usar tu juego. Te enteras de que fallaste cuando
-el juego no hace absolutamente nada.
-
-Proteus le da la vuelta. **El programa ya sabe lo que necesita: está escrito en
-su tabla de importaciones.** Así que Proteus la lee en vez de preguntarte.
-
-### Lo que hace y los demás no
-
-| | Proteus | Los demás |
-|---|---|---|
-| Detección de dependencias | Lee la tabla de imports PE del binario y mapea cada DLL al runtime exacto | Eliges verbos de una lista |
-| Backend gráfico | Elegido según lo que importa el juego (`d3d12.dll` → D3DMetal, `d3d11.dll` → DXMT, `d3d9.dll` → WineD3D) | Eliges de un desplegable |
-| Cuál `.exe` es el juego | Puntuado por tamaño, profundidad, subsistema GUI, icono, imports gráficos y `autorun.inf` | Buscas y eliges tú |
-| Instaladores | Identifica NSIS / Inno Setup / InstallShield / MSI y usa los flags silenciosos correctos | Haces clic por el asistente dentro de un Windows falso |
-| ISOs | Se monta, se lee el `autorun.inf`, se usa el nombre del disco, se ignoran las carpetas de redistribuibles | Lo montas tú |
-| Icono | Extraído del árbol de recursos del ejecutable y convertido a `.icns`, con pixel-art escalado sin emborronar | La copa genérica de Wine |
-| Verificación | **Arranca el juego y espera una ventana real antes de decir "listo"** | Nadie hace esto |
-| Coste en disco | Motor descomprimido una vez y clonado con APFS en cada app: ~365 MB por juego extra | ~1,4 GB por juego |
-| Desinstalar | Arrastras la app a la Papelera. Todo vivía dentro | Quedan botellas, prefijos y entradas de registro |
-
-### Requisitos
-
-- macOS 14 o posterior, Apple Silicon o Intel
-- Nada más. Ni Homebrew, ni herramientas de Xcode, ni Rosetta salvo que un
-  juego de DirectX 12 lo necesite de verdad.
-
-El motor de Wine (~166 MB) y la plantilla (~80 MB) se descargan una sola vez,
-la primera vez. Si ya tienes Sikarugir o Kegworks instalado, Proteus reutiliza
-sus copias y no descarga nada.
-
-### Compilar y ejecutar
+## Build from source
 
 ```bash
-./scripts/bundle.sh release
+swift test              # 16 tests, under a second
+./scripts/bundle.sh     # builds build/Proteus.app
 open build/Proteus.app
 ```
 
-### Línea de comandos
+## Contributing
 
-El mismo motor, sin ventana:
+Reports of games that **don't** work are the most useful thing anyone can send.
+Right click the game in Proteus → **Copy diagnostic report** → open an issue.
 
-```bash
-proteus inspect ~/Descargas/juego.iso      # dice qué necesita, no toca nada
-proteus install ~/Descargas/setup.exe      # crea la app
-proteus install ~/Juegos/MiJuego --name "Mi Juego"
-proteus fix "/Applications/Mi Juego.app"   # reejecuta el instalador con su interfaz
-proteus uninstall "Mi Juego"
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md). One rule: never claim a game works
+without having watched it work.
 
-`inspect` no escribe nada, así que es seguro ejecutarlo sobre cualquier cosa.
+## Licence
 
-### Límites conocidos
+Free software under the **GNU General Public License, version 3 or later**.
+See [LICENSE](LICENSE).
 
-- Un juego a pantalla completa a 320×240 o 640×480 se dibuja a su tamaño
-  nativo sobre un fondo negro en vez de escalar a toda la pantalla. Es cómo
-  Wine gestiona la pantalla, no algo que Proteus pueda arreglar desde fuera.
-- Los instaladores que descargan componentes opcionales solo cuando un humano
-  hace clic (el conjunto gráfico de OpenTTD es el caso clásico) se instalan
-  pero llegan incompletos. La comprobación de arranque de Proteus lo detecta y
-  `proteus fix` reejecuta el instalador con su interfaz visible.
-- Los juegos con anticheat a nivel de kernel no funcionan, ni aquí ni en
-  ningún otro sitio en macOS.
+Deliberate: anyone may use, study, change and redistribute this, and any
+distributed version must arrive with the same freedoms — so nobody, including
+its author, can take a later version closed.
+
+Proteus ships **no third-party code**. Wine, the wrapper template
+([Sikarugir](https://github.com/Sikarugir-App/Sikarugir)), DXMT and
+[Winetricks](https://github.com/Winetricks/winetricks) are downloaded onto your
+machine on first use, the way Homebrew fetches a formula, and used unmodified
+under their own licences. See [THIRD-PARTY.md](THIRD-PARTY.md).
 
 ---
 
-## Contributing
-
-Bug reports, and especially reports of games that do not work, are the most
-useful thing anyone can send. Right click the game in Proteus → **Copy
-diagnostic report**, and open an issue with it.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). There is one rule: never claim a game
-works without having watched it work.
-
-## Licence / Licencia
-
-Proteus is free software under the **GNU General Public License, version 3 or
-later**. See [LICENSE](LICENSE).
-
-That choice is deliberate. Anyone may use, study, change and redistribute this,
-and any distributed version must arrive with the same freedoms — so nobody,
-including its author, can take a later version of it closed.
-
-Proteus es software libre bajo la **GPL v3 o posterior**. Cualquiera puede
-usarlo, estudiarlo, modificarlo y redistribuirlo, y toda versión distribuida
-debe llegar con las mismas libertades: nadie, ni su autor, puede cerrar una
-versión posterior.
-
-### What it does not bundle
-
-Proteus ships no third-party code. The Wine engine, the wrapper template
-([Sikarugir](https://github.com/Sikarugir-App/Sikarugir)), DXMT and
-[Winetricks](https://github.com/Winetricks/winetricks) are downloaded onto your
-machine on first use, the way Homebrew fetches a formula, and are used
-unmodified under their own licences. See [THIRD-PARTY.md](THIRD-PARTY.md).
-
-Proteus no empaqueta código de terceros: el motor de Wine, la plantilla, DXMT y
-Winetricks se descargan en tu máquina la primera vez, sin modificar y bajo sus
-propias licencias.
+<div align="center">
+<sub>Proteus was the sea god who changed form at will — a lion, a serpent, water,
+fire, whatever the moment asked. "Protean" comes from him.<br>
+A Windows game becoming a Mac app is the same trick.</sub>
+</div>
