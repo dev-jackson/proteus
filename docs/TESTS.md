@@ -524,11 +524,11 @@ window does not leave an installer running invisibly in the background.
 
 # Seventh round: the engine is chosen before the game is known
 
-A user installing a DirectX 12 game got "Failed creating the Direct3D device"
-and a window that never appeared. The wrapper was correct in every visible way:
-the right executable was picked (`Bin64/Crysis2Remastered.exe`, the real
-CryEngine binary, not a launcher stub) and the right renderer was chosen
-(`d3dmetal`, correct for DirectX 12).
+A user installing a large DirectX 12 game got "Failed creating the Direct3D
+device" and a window that never appeared. The wrapper was correct in every
+visible way: the right executable was picked — the real CryEngine binary four
+folders deep in `Bin64/`, not the launcher stub beside it — and the right
+renderer was chosen (`d3dmetal`, correct for DirectX 12).
 
 What was wrong was underneath. `D3DMETAL = 1` was written onto a wrapper built
 with the general Wine engine — and D3DMetal ships only with the Game Porting
