@@ -74,16 +74,27 @@ Cuando un juego falla ahí, el procedimiento documentado es que *tú* pongas
 
 ## Probado con
 
-Instalaciones reales, jugadas de forma interactiva, no solo arrancadas.
+Instalaciones reales, jugadas de forma interactiva —no solo arrancadas— en tres
+categorías de peso, porque un juego 2D de 40 MB y uno de DirectX 12 de 55 GB
+fallan de maneras completamente distintas.
 
-| Juego | Cómo llegó | Notas |
-|---|---|---|
-| Cave Story | `.exe` e `.iso` | 2D, solo teclado |
-| GZDoom + Freedoom | `.zip` portable | el renderer solo aparece en cadenas de ejecución |
-| OpenTTD | instalador NSIS | la instalación silenciosa omite los gráficos; detectado y reparado |
-| Warzone 2100 | Inno Setup, 991 MB | instalación grande, con progreso |
-| Steam | instalador NSIS | necesita `-no-cef-sandbox` |
-| 7-Zip | `.msi` | vía `msiexec` |
+| Juego | Cómo llegó | Tamaño | Qué demostró |
+|---|---|---|---|
+| 7-Zip | `.msi` | 2 MB | la vía MSI, con `msiexec` |
+| Cave Story | `.exe` e `.iso` | 40 MB | montaje de disco, `autorun.inf`, solo teclado |
+| Steam | instalador NSIS | 2 MB | título conocido que necesita `-no-cef-sandbox` |
+| OpenTTD | instalador NSIS | 1,5 GB | la instalación silenciosa omite sus gráficos: detectado y reparado |
+| GZDoom + Freedoom | `.zip` portable | 1,6 GB | un renderer que solo aparece en cadenas de ejecución |
+| Warzone 2100 | Inno Setup | 371 MB → 2,5 GB | progreso en instalación larga; cambio de motor y recuperación |
+| Un título CryEngine de DirectX 12 | imagen de disco de 40 GB | 55 GB instalado | el camino pesado de principio a fin |
+
+De ese último salieron casi todas las lecciones caras. Una instalación de 40 GB
+no se rehace a la ligera, así que obligó a la recuperación de instalaciones
+interrumpidas (`proteus finish`), a la comprobación previa de espacio en disco,
+al progreso real, y al descubrimiento de que **todos los juegos de DirectX 12
+recibían el motor de Wine equivocado** —porque el motor hay que elegirlo antes
+de ejecutar el instalador, que es antes de que se pueda saber nada del juego—.
+Ahora Proteus cambia el motor después sin copiar un solo byte de nuevo.
 
 Sin probar y dicho sin adornos: **InstallShield** y los **mandos** —el código
 está, pero ningún mando físico ha pasado por ahí—. Ver

@@ -73,16 +73,27 @@ results. When a game fails there, the documented procedure is for *you* to set
 
 ## Tested on
 
-Real installs, played interactively — not just launched.
+Real installs, played interactively — not just launched — across three weight
+classes, because a 40 MB 2D game and a 55 GB DirectX 12 one fail in completely
+different ways.
 
-| Game | Arrived as | Notes |
-|---|---|---|
-| Cave Story | `.exe` and `.iso` | 2D, keyboard only |
-| GZDoom + Freedoom | portable `.zip` | renderer found only in run-time strings |
-| OpenTTD | NSIS installer | silent install omits graphics; caught and repaired |
-| Warzone 2100 | Inno Setup, 991 MB | large install, progress reporting |
-| Steam | NSIS installer | needs `-no-cef-sandbox` |
-| 7-Zip | `.msi` | MSI path via `msiexec` |
+| Game | Arrived as | Size | What it proved |
+|---|---|---|---|
+| 7-Zip | `.msi` | 2 MB | the MSI path, via `msiexec` |
+| Cave Story | `.exe` and `.iso` | 40 MB | disc mounting, `autorun.inf`, keyboard-only input |
+| Steam | NSIS installer | 2 MB | a known title needing `-no-cef-sandbox` |
+| OpenTTD | NSIS installer | 1.5 GB | silent install omits its graphics — caught and repaired |
+| GZDoom + Freedoom | portable `.zip` | 1.6 GB | a renderer that appears only in run-time strings |
+| Warzone 2100 | Inno Setup | 371 MB → 2.5 GB | progress on a long install; engine swap and recovery |
+| A DirectX 12 CryEngine title | 40 GB disc image | 55 GB installed | the heavy path end to end |
+
+That last one is where most of the hard lessons came from. A 40 GB install
+cannot be redone casually, so it forced the interrupted-install recovery
+(`proteus finish`), the disk-space pre-check, real progress reporting, and the
+discovery that **every DirectX 12 game was getting the wrong Wine engine** —
+because the engine has to be chosen before the installer runs, which is before
+anything about the game is knowable. Proteus now swaps the engine afterwards
+without recopying a byte.
 
 Untested and honest about it: **InstallShield**, and **gamepads** — the code is
 there, but no physical controller has been through it. See
