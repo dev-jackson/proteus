@@ -163,6 +163,53 @@ public struct WrapperBuilder {
         }
     }
 
+    /// Makes the finished bundle something macOS will actually open.
+    ///
+    /// Two things conspire to produce *"is damaged and can't be opened. You
+    /// should move it to the Trash"* — the worst dialogue macOS has, because it
+    /// is wrong and it recommends destroying the user's install.
+    ///
+    /// **The quarantine flag.** Games arrive as downloads, so their files carry
+    /// `com.apple.quarantine`, and it spreads to the bundle built around them.
+    /// Gatekeeper then assesses this app as if the user had downloaded it —
+    /// which they did not; Proteus assembled it here, on this machine, minutes
+    /// ago. Clearing the flag is not a bypass: it is telling the truth about
+    /// where the bundle came from, the same as any app a compiler writes.
+    ///
+    /// **The broken seal.** The template arrives signed. Then a name, an icon,
+    /// an Info.plist and a launcher are written into it, which is exactly what
+    /// a signature exists to detect. A *broken* signature is worse than none:
+    /// no signature means "unknown developer", a broken one means "damaged".
+    ///
+    /// Signing the launcher on its own does not work, and it is worth saying
+    /// why, because it is the obvious thing to try. The linker already gives it
+    /// an ad-hoc signature — `flags=0x20002(adhoc,linker-signed)` — but that is
+    /// the signature of a *bare binary*. macOS judges the enclosing bundle,
+    /// expects a sealed resource directory to go with it, finds none, and
+    /// reports exactly this:
+    ///
+    ///     code has no resources but signature indicates they must be present
+    ///
+    /// So the bundle is signed, as a bundle. `--deep` is used here, having been
+    /// deliberately avoided when signing Proteus itself for distribution: this
+    /// is an ad-hoc seal on a bundle assembled locally that will never leave
+    /// this machine, and its nested pieces — the template's own helper apps —
+    /// arrive unsigned and block a shallow signature outright. Different job,
+    /// different tool.
+    ///
+    /// Measured at about a second on a 1.5 GB game: codesign hashes the code,
+    /// not the Windows prefix, so this does not scale with the size of the
+    /// install.
+    public func seal(_ wrapper: Wrapper) {
+        // The flag Gatekeeper actually reads sits on the bundle itself.
+        // Recursive would walk every file of a 50 GB install for no benefit.
+        _ = Shell.run("/usr/bin/xattr", ["-d", "com.apple.quarantine", wrapper.bundle.path])
+
+        _ = Shell.run("/usr/bin/codesign",
+                      ["--force", "--deep", "--sign", "-", wrapper.bundle.path],
+                      timeout: 600)
+    }
+
     /// Gives the game its own identity.
     ///
     /// Wine run as a bare binary registers with macOS as an anonymous process
@@ -360,6 +407,13 @@ public struct WrapperBuilder {
             values["CFBundleExecutable"] = "ProteusLauncher"
         }
         try wrapper.setPlistValues(values)
+
+        // Last, after every write. Renaming the bundle, swapping its icon and
+        // rewriting Info.plist is precisely what the template's signature
+        // exists to detect, and a signature that no longer matches is reported
+        // to the user as "is damaged and can't be opened. You should move it to
+        // the Trash" — advice that destroys a working install.
+        seal(wrapper)
     }
 
     func slug(_ s: String) -> String {
