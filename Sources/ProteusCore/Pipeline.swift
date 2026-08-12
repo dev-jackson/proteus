@@ -695,6 +695,16 @@ public actor InstallPipeline {
         let targetURL = wrapper.driveC.appendingPathComponent("Games").appendingPathComponent(sanitize(name))
         try fm.createDirectory(at: targetURL, withIntermediateDirectories: true)
 
+        // Silence for the duration. A silent install has no window, so music
+        // coming out of nowhere with nothing on screen to stop it reads as a
+        // fault rather than a feature. Sound goes back on below — muting the
+        // prefix permanently would leave the game itself silent.
+        //
+        // Deliberately not fatal: a prefix that will not take this setting is
+        // still a prefix that can install a game.
+        try? engine.setAudioEnabled(false)
+        defer { try? engine.setAudioEnabled(true) }
+
         // Discs must be visible to the installer; map the source root as D:.
         if source.kind == .disc {
             linkDrive(letter: "d", to: source.root, in: wrapper)
@@ -709,17 +719,10 @@ public actor InstallPipeline {
             let result = try engine.runWatchingProgress(
                 MSIPackage.silentArguments(for: installer, targetWindowsPath: targetWindows),
                 watching: watchedDirectories(wrapper, target: targetURL),
-                workingDirectory: installer.deletingLastPathComponent()) { bytes in
-                    // Once the real size passes the estimate the estimate was
-                    // simply wrong. Showing 99% from then on is worse than
-                    // showing nothing — it looks stuck. Drop the percentage and
-                    // let the byte count carry the signal instead.
-                    let share = Self.installShare(bytes: bytes, estimate: estimate)
-                    let percent = share.map { " (\(Int($0 * 100))%)" } ?? ""
-                    progress(.init(en: "Installing \(name) — \(Self.readableSize(bytes))\(percent)",
-                                   es: "Instalando \(name) — \(Self.readableSize(bytes))\(percent)",
-                                   fraction: share,
-                                   detail: "\(framework.rawValue) · \(Self.elapsed(since: began))"))
+                workingDirectory: installer.deletingLastPathComponent()) { activity in
+                    progress(Self.installProgress(name: name, activity: activity,
+                                                  estimate: estimate, framework: framework,
+                                                  began: began))
                 }
             engine.waitForServerIdle()
             if installedSomething(at: targetURL) { return targetURL }
@@ -749,17 +752,10 @@ public actor InstallPipeline {
             let result = try engine.runWatchingProgress(
                 args,
                 watching: watchedDirectories(wrapper, target: targetURL),
-                workingDirectory: installer.deletingLastPathComponent()) { bytes in
-                    // Once the real size passes the estimate the estimate was
-                    // simply wrong. Showing 99% from then on is worse than
-                    // showing nothing — it looks stuck. Drop the percentage and
-                    // let the byte count carry the signal instead.
-                    let share = Self.installShare(bytes: bytes, estimate: estimate)
-                    let percent = share.map { " (\(Int($0 * 100))%)" } ?? ""
-                    progress(.init(en: "Installing \(name) — \(Self.readableSize(bytes))\(percent)",
-                                   es: "Instalando \(name) — \(Self.readableSize(bytes))\(percent)",
-                                   fraction: share,
-                                   detail: "\(framework.rawValue) · \(Self.elapsed(since: began))"))
+                workingDirectory: installer.deletingLastPathComponent()) { activity in
+                    progress(Self.installProgress(name: name, activity: activity,
+                                                  estimate: estimate, framework: framework,
+                                                  began: began))
                 }
             engine.waitForServerIdle()
             lastLog = Self.meaningfulTail(result.stdout + result.stderr)
@@ -879,6 +875,41 @@ public actor InstallPipeline {
         guard estimate > 0 else { return nil }
         let share = Double(bytes) / Double(estimate)
         return share < 0.95 ? share : nil
+    }
+
+    /// Turns one sample of installer activity into something worth reading.
+    ///
+    /// There are three states and they need saying differently, because the
+    /// only failure that matters here is a person concluding it has hung and
+    /// closing the window — which throws away the whole install.
+    ///
+    /// - Writing files: bytes, and a percentage while the estimate still holds.
+    /// - Working with nothing to show: say *that*, and drop the percentage.
+    ///   A compressed installer decompresses for minutes at a time; a bar
+    ///   frozen at 41% reads as broken, "Extracting" reads as busy.
+    /// - Past the estimate: the estimate was wrong. The byte count is always
+    ///   true, so it carries on alone.
+    static func installProgress(name: String,
+                                activity: WineEngine.InstallActivity,
+                                estimate: Int64,
+                                framework: InstallerDetector.Framework,
+                                began: Date) -> Stage {
+        let elapsed = "\(framework.rawValue) · \(Self.elapsed(since: began))"
+
+        if activity.working {
+            let size = activity.bytes > 0 ? " — \(Self.readableSize(activity.bytes))" : ""
+            return .init(en: "Extracting \(name)\(size) — this part can take a while",
+                         es: "Extrayendo \(name)\(size) — esta parte puede tardar",
+                         fraction: nil,
+                         detail: elapsed)
+        }
+
+        let share = Self.installShare(bytes: activity.bytes, estimate: estimate)
+        let percent = share.map { " (\(Int($0 * 100))%)" } ?? ""
+        return .init(en: "Installing \(name) — \(Self.readableSize(activity.bytes))\(percent)",
+                     es: "Instalando \(name) — \(Self.readableSize(activity.bytes))\(percent)",
+                     fraction: share,
+                     detail: elapsed)
     }
 
     /// "3 min" reads as progress; a raw timestamp does not.

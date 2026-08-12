@@ -115,7 +115,7 @@ public struct WineEngine {
                                     stallFor: TimeInterval = 900,
                                     hardCap: TimeInterval = 6 * 3600,
                                     workingDirectory: URL? = nil,
-                                    progress: (Int64) -> Void = { _ in }) throws -> Shell.Result {
+                                    progress: (InstallActivity) -> Void = { _ in }) throws -> Shell.Result {
         guard FileManager.default.isExecutableFile(atPath: wrapper.wineBinary.path) else {
             throw WineError.missingEngine
         }
@@ -138,7 +138,7 @@ public struct WineEngine {
 
         let started = Date()
         var lastSize: Int64 = -1
-        var lastGrowth = Date()
+        var lastActivity = Date()
         var lastSample = Date.distantPast
         var timedOut = false
 
@@ -150,23 +150,49 @@ public struct WineEngine {
             // Sample on a fixed cadence rather than off the last growth: tying
             // it to growth meant the display froze between samples, which is
             // the very thing this exists to prevent.
-            if now.timeIntervalSince(lastSample) > 4 || lastSize < 0 {
-                lastSample = now
-                // The largest single directory, not the sum. Inno Setup
-                // unpacks into the Windows temp folder and *then* copies into
-                // place, so adding them counts the same bytes twice, races past
-                // any sensible estimate and pins the bar at 99% for the rest of
-                // the install. The front of the work is whichever directory is
-                // currently biggest.
-                let size = watching.map { Self.directorySize($0) }.max() ?? 0
-                if size > lastSize {
-                    lastSize = size
-                    lastGrowth = now
-                    progress(size)
-                } else if now.timeIntervalSince(lastGrowth) > stallFor {
-                    timedOut = true
-                    break
-                }
+            guard now.timeIntervalSince(lastSample) > 4 || lastSize < 0 else { continue }
+            lastSample = now
+
+            // The largest single directory, not the sum. Inno Setup unpacks
+            // into the Windows temp folder and *then* copies into place, so
+            // adding them counts the same bytes twice, races past any sensible
+            // estimate and pins the bar at 99% for the rest of the install.
+            // The front of the work is whichever directory is currently
+            // biggest.
+            let size = watching.map { Self.directorySize($0) }.max() ?? 0
+            let grew = size > lastSize
+
+            // Bytes on disk are not the only sign of life, and treating them
+            // that way killed healthy installs.
+            //
+            // A compressed installer spends long stretches decompressing:
+            // minutes of solid CPU producing almost nothing on disk, then a
+            // burst of files. Heavily packed ones do this for half an hour at a
+            // time. Judged on bytes alone that is indistinguishable from a
+            // hang, so the deadline fired and a good install was terminated
+            // two thirds of the way through.
+            //
+            // So the process tree gets a vote. If it is burning CPU it is
+            // working, whatever the disk says.
+            let cpu = Self.processTreeCPU(rootPID: process.processIdentifier)
+            let busy = cpu >= Self.workingCPUThreshold
+
+            if grew {
+                lastSize = size
+                lastActivity = now
+            } else if busy {
+                lastActivity = now
+            }
+
+            if grew || busy {
+                // `working` tells the caller to stop showing a percentage that
+                // cannot move, and say what is actually happening instead.
+                progress(InstallActivity(bytes: max(size, 0),
+                                         working: !grew && busy,
+                                         cpu: cpu))
+            } else if now.timeIntervalSince(lastActivity) > stallFor {
+                timedOut = true
+                break
             }
         }
 
@@ -184,9 +210,86 @@ public struct WineEngine {
                             timedOut: timedOut)
     }
 
+    /// What the installer is doing right now.
+    ///
+    /// Two different things count as progress and they need telling apart: a
+    /// growing byte count can drive a percentage, whereas a process working
+    /// hard on nothing visible can only be reported honestly as "still going".
+    public struct InstallActivity: Sendable {
+        /// Bytes written so far, by the largest watched directory.
+        public let bytes: Int64
+        /// Busy, but with nothing to show for it yet — decompressing.
+        public let working: Bool
+        /// Combined CPU of the installer's process tree, in percent.
+        public let cpu: Double
+
+        public init(bytes: Int64, working: Bool = false, cpu: Double = 0) {
+            self.bytes = bytes
+            self.working = working
+            self.cpu = cpu
+        }
+    }
+
+    /// Above this, the installer is considered to be working rather than hung.
+    ///
+    /// Low on purpose. A single busy thread reads as ~100%, and the number only
+    /// has to separate "doing something" from "doing nothing" — an idle,
+    /// genuinely wedged process sits near zero, not near ten.
+    static let workingCPUThreshold: Double = 8
+
+    /// Combined CPU of a process and everything it spawned.
+    ///
+    /// Wine does not keep its children tidy: the loader hands off to a `.tmp`
+    /// extractor, `wineserver` runs alongside, and some of it reparents away
+    /// from us. So descendants are followed by parentage *and* by process
+    /// group, and anything reachable either way counts.
+    ///
+    /// One `ps` call, parsed in memory. Polling this every few seconds must not
+    /// itself become the load.
+    static func processTreeCPU(rootPID: pid_t) -> Double {
+        let listing = Shell.run("/bin/ps", ["-Ao", "pid=,ppid=,pgid=,pcpu="])
+        guard listing.exitCode == 0 else { return 0 }
+
+        struct Entry { let ppid: pid_t; let pgid: pid_t; let cpu: Double }
+        var table: [pid_t: Entry] = [:]
+        var children: [pid_t: [pid_t]] = [:]
+
+        for line in listing.stdout.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard parts.count >= 4,
+                  let pid = pid_t(parts[0]), let ppid = pid_t(parts[1]),
+                  let pgid = pid_t(parts[2]), let cpu = Double(parts[3]) else { continue }
+            table[pid] = Entry(ppid: ppid, pgid: pgid, cpu: cpu)
+            children[ppid, default: []].append(pid)
+        }
+
+        guard let root = table[rootPID] else { return 0 }
+
+        var total: Double = 0
+        var seen: Set<pid_t> = []
+        var queue: [pid_t] = [rootPID]
+
+        // Anything sharing the loader's process group is part of this install
+        // even when the parent chain has been broken.
+        for (pid, entry) in table where entry.pgid == root.pgid { queue.append(pid) }
+
+        while let pid = queue.popLast() {
+            guard seen.insert(pid).inserted, let entry = table[pid] else { continue }
+            total += entry.cpu
+            queue.append(contentsOf: children[pid] ?? [])
+        }
+        return total
+    }
+
     /// Cheap recursive size. Capped: an installer writing hundreds of thousands
     /// of files should not turn the progress check into the slow part.
-    static func directorySize(_ root: URL, limit: Int = 20_000) -> Int64 {
+    ///
+    /// The cap used to be 20,000, which was low enough to cause the bug it was
+    /// meant to avoid. Past that many files the walk stopped early, the total
+    /// stopped rising, and a large game — which is exactly the case that needs
+    /// a progress bar — showed a frozen one and was then killed for stalling.
+    /// Big games routinely hold six figures of files.
+    static func directorySize(_ root: URL, limit: Int = 400_000) -> Int64 {
         let fm = FileManager()
         guard let e = fm.enumerator(at: root, includingPropertiesForKeys: [.fileSizeKey],
                                     options: [.skipsHiddenFiles]) else { return 0 }
@@ -207,6 +310,28 @@ public struct WineEngine {
             _ = try run(["reg", "add", entry.path, "/v", entry.key,
                          "/t", entry.type, "/d", entry.value, "/f"], timeout: 60)
         }
+    }
+
+    /// Turns sound off, or back on, for everything in this prefix.
+    ///
+    /// Installers play music. Inno Setup and NSIS both support a soundtrack and
+    /// plenty of games ship one, which made sense in 1998 next to a wizard with
+    /// a picture of a spaceship on it.
+    ///
+    /// Here there is no wizard. Proteus runs installers silently, so the window
+    /// the person is looking at is a progress bar in a Mac app — and music
+    /// starts playing from a program with no visible interface, out of nowhere,
+    /// with nothing to stop it. It reads as something having gone wrong.
+    ///
+    /// Setting the audio driver to nothing is Wine's own supported way of doing
+    /// this (`winecfg` calls it "Driver: none"). It is a property of the
+    /// prefix, not of the process, so it must be put back afterwards or the
+    /// game itself would be mute.
+    public func setAudioEnabled(_ enabled: Bool) throws {
+        try applyRegistry([
+            (path: "HKCU\\Software\\Wine\\Drivers", key: "Audio",
+             type: "REG_SZ", value: enabled ? "coreaudio" : ""),
+        ])
     }
 
     func lastLines(_ text: String, _ n: Int) -> String {
