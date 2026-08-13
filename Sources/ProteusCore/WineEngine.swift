@@ -62,10 +62,35 @@ public struct WineEngine {
         guard FileManager.default.isExecutableFile(atPath: wrapper.wineBinary.path) else {
             throw WineError.missingEngine
         }
+        clearQuarantine()
         return Shell.run(wrapper.wineBinary.path, arguments,
                          environment: environment(extra: extraEnvironment),
                          currentDirectory: workingDirectory,
                          timeout: timeout)
+    }
+
+    /// Clears the quarantine flag from the bundle before running anything in it.
+    ///
+    /// macOS gives files created by a quarantined process the same flag, and a
+    /// game arrives as a download — so its installer is quarantined, and
+    /// everything it writes inside the wrapper inherits that. Sooner or later
+    /// the flag reaches the bundle itself, and the moment it does, macOS starts
+    /// refusing to open an app it watched us assemble, with "is damaged and
+    /// can't be opened. You should move it to the Trash."
+    ///
+    /// Clearing it once at the end is not enough, because the dialogue appears
+    /// *during* the install — the report that prompted this had the progress
+    /// bar still reading "Setting up Windows" behind it. So it is cleared here
+    /// instead: every path that runs anything Windows goes through this
+    /// function, whether that is wineboot, winetricks, the installer or the
+    /// game.
+    ///
+    /// One `xattr` call on a single directory, and only the bundle root, which
+    /// is what the system reads. Not a bypass of anything: the bundle was built
+    /// on this machine, minutes ago, by this program.
+    func clearQuarantine() {
+        _ = Shell.run("/usr/bin/xattr", ["-d", "com.apple.quarantine", wrapper.bundle.path],
+                      timeout: 30)
     }
 
     /// Creates the Windows filesystem and registry. First run of a new prefix
@@ -119,6 +144,8 @@ public struct WineEngine {
         guard FileManager.default.isExecutableFile(atPath: wrapper.wineBinary.path) else {
             throw WineError.missingEngine
         }
+
+        clearQuarantine()
 
         let process = Process()
         process.executableURL = wrapper.wineBinary

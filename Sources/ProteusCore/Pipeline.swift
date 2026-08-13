@@ -554,6 +554,14 @@ public actor InstallPipeline {
             return stashInstaller(source.mainExecutable, in: wrapper)
         }()
 
+        // The very last thing, after the smoke test and any repair. Sealing
+        // earlier does not survive: every one of those steps writes inside the
+        // bundle and invalidates the signature again. A valid seal at rest is
+        // what keeps macOS from ever calling this "damaged", should the
+        // quarantine flag reach it later — from a backup tool, a file copy, or
+        // any of the routes we do not control.
+        builder.seal(Wrapper(bundle: destination))
+
         return Outcome(appPath: destination, name: gameName, warnings: warnings,
                        verdict: verdict, input: inputReport, display: repair,
                        installerForManualRun: fallbackInstaller)
@@ -650,6 +658,7 @@ public actor InstallPipeline {
 
         _ = Shell.run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
                       ["-f", app.path], timeout: 30)
+        builder.seal(Wrapper(bundle: app))
         progress(.init(en: "Ready", es: "Listo", fraction: 1.0))
         return Outcome(appPath: app, name: gameName, warnings: warnings,
                        verdict: verdict, input: nil, display: nil, installerForManualRun: nil)

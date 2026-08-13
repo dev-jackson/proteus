@@ -161,6 +161,20 @@ public struct WrapperBuilder {
         if launcher != nil {
             try wrapper.setPlistValues(["CFBundleExecutable": "ProteusLauncher"])
         }
+
+        // Seal here, not only at the end. This is the moment the template's
+        // signature stops matching — a launcher has just been written in and
+        // Info.plist rewritten — and it is *before* the long part of the
+        // install. Leaving it broken until `configure` meant macOS saw an
+        // invalid bundle for the entire hour in between, and refused to open it
+        // with "is damaged", while the progress bar still said "Setting up
+        // Windows".
+        //
+        // The whole-bundle sweep happens here for the same reason: right now
+        // this is a few hundred megabytes of template and engine, and clearing
+        // quarantine from all of it costs almost nothing. After the game lands
+        // the same walk would cross tens of gigabytes.
+        seal(wrapper, sweepEverything: true)
     }
 
     /// Makes the finished bundle something macOS will actually open.
@@ -200,10 +214,14 @@ public struct WrapperBuilder {
     /// Measured at about a second on a 1.5 GB game: codesign hashes the code,
     /// not the Windows prefix, so this does not scale with the size of the
     /// install.
-    public func seal(_ wrapper: Wrapper) {
-        // The flag Gatekeeper actually reads sits on the bundle itself.
-        // Recursive would walk every file of a 50 GB install for no benefit.
-        _ = Shell.run("/usr/bin/xattr", ["-d", "com.apple.quarantine", wrapper.bundle.path])
+    /// - Parameter sweepEverything: also clear quarantine from every file
+    ///   inside. Worth doing once, early, while the bundle is a few hundred
+    ///   megabytes of template and engine; ruinous later, when the same walk
+    ///   crosses tens of gigabytes of installed game.
+    public func seal(_ wrapper: Wrapper, sweepEverything: Bool = false) {
+        let flags = sweepEverything ? ["-dr"] : ["-d"]
+        _ = Shell.run("/usr/bin/xattr", flags + ["com.apple.quarantine", wrapper.bundle.path],
+                      timeout: 300)
 
         _ = Shell.run("/usr/bin/codesign",
                       ["--force", "--deep", "--sign", "-", wrapper.bundle.path],
