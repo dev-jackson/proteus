@@ -7,6 +7,7 @@
 // any later version. It is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY. See <https://www.gnu.org/licenses/>.
 
+import Darwin
 import XCTest
 @testable import ProteusCore
 
@@ -136,17 +137,37 @@ final class InstallLivenessTests: XCTestCase {
     /// had been at 100% CPU for minutes with nothing on disk — the busy thread
     /// was in NtUserPeekMessage → NtYieldExecution, and it owned a window
     /// titled "Setup" measuring one pixel square.
-    func testADeadProcessOwnsNoDialogue() {
-        XCTAssertNil(WineEngine.dialogTitle(inTreeOf: 999_999))
+    func testNoProcessesMeansNoDialogue() {
+        XCTAssertNil(WineEngine.dialogTitle(ownedBy: []))
+        XCTAssertNil(WineEngine.dialogTitle(ownedBy: [999_999]))
+    }
+
+    /// The bug that made every earlier attempt useless: wine detaches its
+    /// worker, which ends up with ppid 1 and its own process group, so walking
+    /// parents finds nothing. Identity has to come from the executable's path.
+    func testProcessesAreFoundByTheBundleTheyRunFrom() {
+        // Asked of this process's own executable path — `arguments[0]` is the
+        // .xctest bundle, not the runner binary that is actually executing.
+        var buffer = [CChar](repeating: 0, count: 4096)
+        let me = ProcessInfo.processInfo.processIdentifier
+        XCTAssertGreaterThan(proc_pidpath(me, &buffer, UInt32(buffer.count)), 0)
+        let mine = URL(fileURLWithPath: String(cString: buffer))
+            .deletingLastPathComponent().path
+
+        let found = WineEngine.processes(inBundle: mine)
+        XCTAssertTrue(found.pids.contains(ProcessInfo.processInfo.processIdentifier),
+                      "the running test process should be found by its own path")
+
+        XCTAssertTrue(WineEngine.processes(inBundle: "/nowhere/at/all").pids.isEmpty)
     }
 
     /// Untitled windows must not count. Wine keeps `explorer.exe /desktop`
     /// alive with one for the whole session, so "has a window" is always true
     /// and would report every install as waiting for input.
-    func testThisProcessTreeIsNotMistakenForOneAwaitingAnAnswer() {
+    func testThisProcessIsNotMistakenForOneAwaitingAnAnswer() {
         // The test runner owns no titled window, but it does own the untitled
         // machinery any AppKit-linked process has.
-        XCTAssertNil(WineEngine.dialogTitle(inTreeOf: ProcessInfo.processInfo.processIdentifier))
+        XCTAssertNil(WineEngine.dialogTitle(ownedBy: [ProcessInfo.processInfo.processIdentifier]))
     }
 
     /// The cap that caused the bug, demonstrated rather than asserted.

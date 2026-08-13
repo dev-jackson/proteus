@@ -230,7 +230,10 @@ public struct WineEngine {
             //
             // So the process tree gets a vote. If it is burning CPU it is
             // working, whatever the disk says.
-            let cpu = Self.processTreeCPU(rootPID: process.processIdentifier)
+            // Identified by the bundle they run from, because wine's children
+            // detach from us entirely — see `processes(inBundle:)`.
+            let family = Self.processes(inBundle: wrapper.bundle.path)
+            let cpu = family.cpu
             let busy = cpu >= Self.workingCPUThreshold
 
             if grew {
@@ -256,7 +259,7 @@ public struct WineEngine {
             // progress, and a titled window is the evidence of what it is
             // waiting for.
             if now.timeIntervalSince(lastGrowth) > promptAfter,
-               let title = Self.dialogTitle(inTreeOf: process.processIdentifier) {
+               let title = Self.dialogTitle(ownedBy: family.pids) {
                 waitingOn = title
                 break
             }
@@ -319,8 +322,7 @@ public struct WineEngine {
     /// only a *named* one counts — a dialogue has a title, a desktop does not.
     /// The one that prompted this was called "Setup", and measured one pixel
     /// square, because /VERYSILENT hides a dialogue without answering it.
-    static func dialogTitle(inTreeOf pid: pid_t) -> String? {
-        let family = processTree(rootPID: pid)
+    static func dialogTitle(ownedBy family: Set<pid_t>) -> String? {
         guard !family.isEmpty,
               let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]
         else { return nil }
@@ -348,20 +350,41 @@ public struct WineEngine {
         snapshot(rootPID: rootPID).cpu
     }
 
-    /// Every process belonging to this install, by pid.
-    static func processTree(rootPID: pid_t) -> Set<pid_t> {
-        snapshot(rootPID: rootPID).pids
+    /// Every process belonging to this install, and their combined CPU.
+    ///
+    /// Identity is the executable's path, not parentage.
+    ///
+    /// Walking parents and process groups was the obvious approach and it is
+    /// wrong. Wine detaches: the extractor that does all the work ends up with
+    /// ppid 1 and a process group of its own, so it is not reachable from the
+    /// loader we launched by either route. Everything measured about it —
+    /// its CPU, the dialogue it was waiting on — was invisible, which is why
+    /// nothing fired.
+    ///
+    /// `proc_pidpath` reports the real Mach-O behind a process whatever wine
+    /// has done to its arguments, and every one of them runs from
+    /// `…/SharedSupport/wine/Runtime.app/Contents/MacOS/`. A path inside this
+    /// bundle is exact, cheap, and cannot be lost by reparenting.
+    static func processes(inBundle bundlePath: String) -> (cpu: Double, pids: Set<pid_t>) {
+        let listing = Shell.run("/bin/ps", ["-Ao", "pid=,pcpu="])
+        guard listing.exitCode == 0 else { return (0, []) }
+
+        var total: Double = 0
+        var found: Set<pid_t> = []
+        var buffer = [CChar](repeating: 0, count: 4096)
+
+        for line in listing.stdout.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard parts.count >= 2, let pid = pid_t(parts[0]), let cpu = Double(parts[1]) else { continue }
+            guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { continue }
+            guard String(cString: buffer).hasPrefix(bundlePath) else { continue }
+            found.insert(pid)
+            total += cpu
+        }
+        return (total, found)
     }
 
-    /// One `ps` call, walked once, answering both questions.
-    ///
-    /// Wine does not keep its children tidy: the loader hands off to a `.tmp`
-    /// extractor, `wineserver` runs alongside, and some of it reparents away
-    /// from us. So descendants are followed by parentage *and* by process
-    /// group, and anything reachable either way counts.
-    ///
-    /// Polling this every few seconds must not itself become the load, hence
-    /// one call rather than one per process.
+    /// Kept for the case where there is no bundle to match against.
     static func snapshot(rootPID: pid_t) -> (cpu: Double, pids: Set<pid_t>) {
         let listing = Shell.run("/bin/ps", ["-Ao", "pid=,ppid=,pgid=,pcpu="])
         guard listing.exitCode == 0 else { return (0, []) }
@@ -384,9 +407,6 @@ public struct WineEngine {
         var total: Double = 0
         var seen: Set<pid_t> = []
         var queue: [pid_t] = [rootPID]
-
-        // Anything sharing the loader's process group is part of this install
-        // even when the parent chain has been broken.
         for (pid, entry) in table where entry.pgid == root.pgid { queue.append(pid) }
 
         while let pid = queue.popLast() {
