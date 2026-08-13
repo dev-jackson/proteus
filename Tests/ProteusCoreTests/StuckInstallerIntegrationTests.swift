@@ -1,0 +1,108 @@
+// Proteus — Windows games on macOS, without the ceremony.
+// Copyright (C) 2026 Jackson Sánchez Rodríguez
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option)
+// any later version. It is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY. See <https://www.gnu.org/licenses/>.
+
+import XCTest
+@testable import ProteusCore
+
+/// The one case the unit tests cannot reach: a real installer, really waiting.
+///
+/// Everything about this failure was learned from installs that could not be
+/// repeated on demand — fourteen hours wasted, twice, on a diagnosis that was
+/// wrong. So it is reproduced here deliberately, with a free game, by running
+/// an installer *without* its silent flags. That is precisely the condition
+/// silent mode produces by accident: a window nobody can answer.
+///
+/// Off by default. It drives real Wine and takes a couple of minutes:
+///
+///     PROTEUS_INTEGRATION=1 PROTEUS_WRAPPER=/Applications/OpenTTD.app swift test
+///
+final class StuckInstallerIntegrationTests: XCTestCase {
+
+    private func requirements() throws -> (WineEngine, URL) {
+        guard ProcessInfo.processInfo.environment["PROTEUS_INTEGRATION"] == "1" else {
+            throw XCTSkip("set PROTEUS_INTEGRATION=1 to run this against real Wine")
+        }
+        guard let path = ProcessInfo.processInfo.environment["PROTEUS_WRAPPER"] else {
+            throw XCTSkip("set PROTEUS_WRAPPER to a built game bundle")
+        }
+        let wrapper = Wrapper(bundle: URL(fileURLWithPath: path))
+        guard FileManager.default.isExecutableFile(atPath: wrapper.wineBinary.path) else {
+            throw XCTSkip("\(path) has no Wine engine in it")
+        }
+
+        let installer = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("test-games/openttd-installer.exe")
+        guard FileManager.default.fileExists(atPath: installer.path) else {
+            throw XCTSkip("test-games/openttd-installer.exe is not here")
+        }
+        return (WineEngine(wrapper: wrapper), installer)
+    }
+
+    /// Run an installer with no silent flags, and it puts up its wizard and
+    /// waits. Three things then have to happen, and each one was broken at
+    /// some point:
+    ///
+    /// 1. The dialogue is noticed at all. Walking parents and process groups
+    ///    missed it entirely, because wine reparents its worker to init.
+    /// 2. The wait ends. It is supposed to give up after `promptAfter`.
+    /// 3. **The call returns.** It did not — `readToEnd()` waited on a pipe
+    ///    the detached child still held open, so the run wedged *after*
+    ///    correctly deciding to stop, and sat there for fourteen hours.
+    func testAnInstallerWaitingOnADialogueIsNoticedAndTheRunEnds() throws {
+        let (engine, installer) = try requirements()
+
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("proteus-stuck-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        var sawDialogueWhileRunning: String?
+        let began = Date()
+
+        // 45 seconds rather than the shipping five minutes: the behaviour is
+        // identical and a test that takes five minutes gets skipped.
+        let result = try engine.runWatchingProgress(
+            [installer.path],
+            destination: scratch,
+            watching: [scratch],
+            stallFor: 600,
+            promptAfter: 45,
+            hardCap: 240) { activity in
+                if sawDialogueWhileRunning == nil { sawDialogueWhileRunning = activity.waitingOn }
+            }
+
+        let elapsed = Date().timeIntervalSince(began)
+
+        // 3, the one that cost fourteen hours: it came back at all.
+        XCTAssertLessThan(elapsed, 200,
+                          "the call did not return promptly — the pipe drain is blocking again")
+
+        // 1 and 2.
+        XCTAssertNotNil(result.waitingOn,
+                        "an installer sitting on its own wizard was not recognised as waiting")
+        XCTAssertNotNil(sawDialogueWhileRunning,
+                        "the dialogue must be reported through progress while it is happening, "
+                        + "not only in the final result")
+
+        // Nothing of ours may outlive the call. This is what makes a second
+        // attempt possible, and what stops two installs fighting over a prefix.
+        let survivors = WineEngine.processes(inBundle: engine.wrapper.bundle.path).pids
+        XCTAssertTrue(survivors.isEmpty, "left \(survivors.count) wine process(es) running")
+
+        print("""
+
+        ── stuck-installer integration ──────────────
+          returned after   \(Int(elapsed))s
+          waiting on       \(result.waitingOn ?? "—")
+          seen while live  \(sawDialogueWhileRunning ?? "—")
+          survivors        \(survivors.count)
+        ─────────────────────────────────────────────
+        """)
+    }
+}

@@ -291,15 +291,29 @@ public struct WineEngine {
                 break
             }
 
-            if grew || busy {
-                // `working` tells the caller to stop showing a percentage that
-                // cannot move, and say what is actually happening instead.
-                progress(InstallActivity(bytes: max(size, 0),
-                                         installed: installed,
-                                         working: !grew && busy,
-                                         cpu: cpu,
-                                         waitingOn: dialogue))
-            } else if now.timeIntervalSince(lastActivity) > stallFor {
+            // Reported every sample, unconditionally.
+            //
+            // It used to be reported only when something had grown or the CPU
+            // was busy, and an installer sitting on its own wizard is neither:
+            // it waits on a click at nearly zero percent. So the single state
+            // most worth describing was the one that produced no report at all
+            // — the code knew it was waiting on a dialogue while the display
+            // said nothing whatever. Caught by driving a real installer
+            // without its silent flags, which is the only way this shows up.
+            //
+            // There is always something true to say. Even with nothing moving
+            // the elapsed time advances, and a number that changes is the
+            // difference between waiting and wondering.
+            //
+            // `working` tells the caller to stop showing a percentage that
+            // cannot move, and say what is actually happening instead.
+            progress(InstallActivity(bytes: max(size, 0),
+                                     installed: installed,
+                                     working: !grew && busy,
+                                     cpu: cpu,
+                                     waitingOn: dialogue))
+
+            if now.timeIntervalSince(lastActivity) > stallFor {
                 timedOut = true
                 break
             }
