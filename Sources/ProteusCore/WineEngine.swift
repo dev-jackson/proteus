@@ -183,7 +183,14 @@ public struct WineEngine {
         let sink = Shell.OutputSink()
         process.standardOutput = pipe
         process.standardError = pipe
-        pipe.fileHandleForReading.readabilityHandler = { sink.appendOut($0.availableData) }
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            // A zero-length read means the writer has gone. Left armed, the handler is
+            // called again immediately and forever, which is a busy loop on a dead
+            // descriptor — it was measured burning a whole core for fourteen hours.
+            if chunk.isEmpty { handle.readabilityHandler = nil; return }
+            sink.appendOut(chunk)
+        }
 
         do { try process.run() } catch {
             return Shell.Result(exitCode: -1, stdout: "", stderr: "\(error)")
@@ -298,14 +305,32 @@ public struct WineEngine {
             }
         }
 
-        if process.isRunning {
+        // Killing the process we launched is not enough, and assuming it was
+        // cost fourteen hours of a wedged install burning two cores.
+        //
+        // Wine detaches: the loader exits, and the extractor carries on with
+        // ppid 1 in a process group of its own. It still holds the write end
+        // of this pipe, so `readToEnd()` below waits for an end-of-file that
+        // will never arrive, and the readability handler spins on the same
+        // descriptor at full tilt. The loop had already decided to stop; what
+        // followed it never returned.
+        //
+        // So everything running from this bundle goes, identified the same way
+        // it is measured — by the executable it runs from.
+        if process.isRunning || !Self.processes(inBundle: wrapper.bundle.path).pids.isEmpty {
             process.terminate()
-            Thread.sleep(forTimeInterval: 1.0)
+            for pid in Self.processes(inBundle: wrapper.bundle.path).pids { kill(pid, SIGTERM) }
+            Thread.sleep(forTimeInterval: 1.5)
+            for pid in Self.processes(inBundle: wrapper.bundle.path).pids { kill(pid, SIGKILL) }
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
         process.waitUntilExit()
         pipe.fileHandleForReading.readabilityHandler = nil
-        if let rest = try? pipe.fileHandleForReading.readToEnd() { sink.appendOut(rest) }
+        // Deliberately not `readToEnd()`. Whatever the handler collected is
+        // the log; waiting for the descriptor to close is exactly the trap
+        // above, and a truncated log is worth incomparably more than a
+        // complete one that never arrives.
+        try? pipe.fileHandleForReading.close()
 
         let (out, _) = sink.strings()
         return Shell.Result(exitCode: process.terminationStatus, stdout: out, stderr: "",

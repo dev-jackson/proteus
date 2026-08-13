@@ -96,7 +96,14 @@ public struct SmokeTest {
         let sink = Shell.OutputSink()
         process.standardOutput = pipe
         process.standardError = pipe
-        pipe.fileHandleForReading.readabilityHandler = { sink.appendOut($0.availableData) }
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            // A zero-length read means the writer has gone. Left armed, the handler is
+            // called again immediately and forever, which is a busy loop on a dead
+            // descriptor — it was measured burning a whole core for fourteen hours.
+            if chunk.isEmpty { handle.readabilityHandler = nil; return }
+            sink.appendOut(chunk)
+        }
 
         do { try process.run() } catch {
             return Verdict(result: .couldNotStart,
@@ -188,7 +195,14 @@ public struct SmokeTest {
         let sink = Shell.OutputSink()
         process.standardOutput = pipe
         process.standardError = pipe
-        pipe.fileHandleForReading.readabilityHandler = { sink.appendOut($0.availableData) }
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            // A zero-length read means the writer has gone. Left armed, the handler is
+            // called again immediately and forever, which is a busy loop on a dead
+            // descriptor — it was measured burning a whole core for fourteen hours.
+            if chunk.isEmpty { handle.readabilityHandler = nil; return }
+            sink.appendOut(chunk)
+        }
         do { try process.run() } catch { return nil }
 
         defer {

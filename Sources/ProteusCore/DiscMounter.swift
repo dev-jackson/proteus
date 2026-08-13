@@ -137,10 +137,18 @@ public enum Shell {
         // buffer and deadlocks otherwise.
         let sink = OutputSink()
         out.fileHandleForReading.readabilityHandler = { h in
-            sink.appendOut(h.availableData)
+            let chunk = h.availableData
+            // Zero bytes means the writer is gone; leaving the handler
+            // armed re-fires it forever on a dead descriptor.
+            if chunk.isEmpty { h.readabilityHandler = nil; return }
+            sink.appendOut(chunk)
         }
         err.fileHandleForReading.readabilityHandler = { h in
-            sink.appendErr(h.availableData)
+            let chunk = h.availableData
+            // Zero bytes means the writer is gone; leaving the handler
+            // armed re-fires it forever on a dead descriptor.
+            if chunk.isEmpty { h.readabilityHandler = nil; return }
+            sink.appendErr(chunk)
         }
 
         do { try process.run() } catch {
