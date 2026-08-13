@@ -7,6 +7,7 @@
 // any later version. It is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY. See <https://www.gnu.org/licenses/>.
 
+import CoreGraphics
 import Foundation
 
 /// Drives Wine inside a wrapper without ever showing the user a terminal.
@@ -145,6 +146,7 @@ public struct WineEngine {
                                     destination: URL,
                                     watching: [URL],
                                     stallFor: TimeInterval = 900,
+                                    promptAfter: TimeInterval = 300,
                                     hardCap: TimeInterval = 6 * 3600,
                                     workingDirectory: URL? = nil,
                                     progress: (InstallActivity) -> Void = { _ in }) throws -> Shell.Result {
@@ -175,6 +177,8 @@ public struct WineEngine {
         var lastActivity = Date()
         var lastSample = Date.distantPast
         var timedOut = false
+        var lastGrowth = Date()
+        var waitingOn: String?
         // The destination is measured whether or not the caller listed it.
         let allWatched = ([destination] + watching).reduce(into: [URL]()) { unique, url in
             if !unique.contains(where: { $0.path == url.path }) { unique.append(url) }
@@ -232,8 +236,29 @@ public struct WineEngine {
             if grew {
                 lastSize = size
                 lastActivity = now
+                lastGrowth = now
             } else if busy {
                 lastActivity = now
+            }
+
+            // A "silent" installer that is not silent after all.
+            //
+            // Found by sampling one that had been at 100% CPU for minutes with
+            // nothing on disk: the busy thread was in NtUserPeekMessage →
+            // NtYieldExecution, a message pump spinning on a question nobody
+            // was there to answer. It had a window titled "Setup", one pixel
+            // by one pixel — /VERYSILENT hid the dialogue but did not answer
+            // it. Left alone it would spin until the six-hour cap.
+            //
+            // CPU is why this needs its own check: a spinning pump looks
+            // exactly as busy as real work, so the liveness rule above would
+            // happily wait forever. Disk growth is the honest measure of
+            // progress, and a titled window is the evidence of what it is
+            // waiting for.
+            if now.timeIntervalSince(lastGrowth) > promptAfter,
+               let title = Self.dialogTitle(inTreeOf: process.processIdentifier) {
+                waitingOn = title
+                break
             }
 
             if grew || busy {
@@ -260,7 +285,7 @@ public struct WineEngine {
 
         let (out, _) = sink.strings()
         return Shell.Result(exitCode: process.terminationStatus, stdout: out, stderr: "",
-                            timedOut: timedOut)
+                            timedOut: timedOut, waitingOn: waitingOn)
     }
 
     /// What the installer is doing right now.
@@ -287,6 +312,30 @@ public struct WineEngine {
         }
     }
 
+    /// The title of a window this process tree has put on screen, if any.
+    ///
+    /// Wine always has windows: `explorer.exe /desktop` keeps an untitled one
+    /// alive for the whole session. So an untitled window means nothing and
+    /// only a *named* one counts — a dialogue has a title, a desktop does not.
+    /// The one that prompted this was called "Setup", and measured one pixel
+    /// square, because /VERYSILENT hides a dialogue without answering it.
+    static func dialogTitle(inTreeOf pid: pid_t) -> String? {
+        let family = processTree(rootPID: pid)
+        guard !family.isEmpty,
+              let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+
+        for window in windows {
+            guard let owner = window[kCGWindowOwnerPID as String] as? pid_t,
+                  family.contains(owner),
+                  let title = window[kCGWindowName as String] as? String,
+                  !title.trimmingCharacters(in: .whitespaces).isEmpty
+            else { continue }
+            return title
+        }
+        return nil
+    }
+
     /// Above this, the installer is considered to be working rather than hung.
     ///
     /// Low on purpose. A single busy thread reads as ~100%, and the number only
@@ -295,17 +344,27 @@ public struct WineEngine {
     static let workingCPUThreshold: Double = 8
 
     /// Combined CPU of a process and everything it spawned.
+    static func processTreeCPU(rootPID: pid_t) -> Double {
+        snapshot(rootPID: rootPID).cpu
+    }
+
+    /// Every process belonging to this install, by pid.
+    static func processTree(rootPID: pid_t) -> Set<pid_t> {
+        snapshot(rootPID: rootPID).pids
+    }
+
+    /// One `ps` call, walked once, answering both questions.
     ///
     /// Wine does not keep its children tidy: the loader hands off to a `.tmp`
     /// extractor, `wineserver` runs alongside, and some of it reparents away
     /// from us. So descendants are followed by parentage *and* by process
     /// group, and anything reachable either way counts.
     ///
-    /// One `ps` call, parsed in memory. Polling this every few seconds must not
-    /// itself become the load.
-    static func processTreeCPU(rootPID: pid_t) -> Double {
+    /// Polling this every few seconds must not itself become the load, hence
+    /// one call rather than one per process.
+    static func snapshot(rootPID: pid_t) -> (cpu: Double, pids: Set<pid_t>) {
         let listing = Shell.run("/bin/ps", ["-Ao", "pid=,ppid=,pgid=,pcpu="])
-        guard listing.exitCode == 0 else { return 0 }
+        guard listing.exitCode == 0 else { return (0, []) }
 
         struct Entry { let ppid: pid_t; let pgid: pid_t; let cpu: Double }
         var table: [pid_t: Entry] = [:]
@@ -320,7 +379,7 @@ public struct WineEngine {
             children[ppid, default: []].append(pid)
         }
 
-        guard let root = table[rootPID] else { return 0 }
+        guard let root = table[rootPID] else { return (0, []) }
 
         var total: Double = 0
         var seen: Set<pid_t> = []
@@ -335,7 +394,7 @@ public struct WineEngine {
             total += entry.cpu
             queue.append(contentsOf: children[pid] ?? [])
         }
-        return total
+        return (total, seen)
     }
 
     /// Cheap recursive size. Capped: an installer writing hundreds of thousands

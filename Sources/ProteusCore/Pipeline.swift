@@ -60,6 +60,9 @@ public actor InstallPipeline {
         case gameNotFoundAfterInstall
         case installerFailed(String)
         case notEnoughSpace(needed: Int64, free: Int64)
+        /// The installer is not failing, it is asking — and a silent install
+        /// has nobody to answer it.
+        case installerNeedsAttention(String)
 
         public var description: String {
             switch self {
@@ -70,6 +73,9 @@ public actor InstallPipeline {
             case .notEnoughSpace(let needed, let free):
                 return "this game needs about \(InstallPipeline.readableSize(needed)) and there is only "
                     + "\(InstallPipeline.readableSize(free)) free. Free up some space and try again."
+            case .installerNeedsAttention(let question):
+                return "this installer will not run unattended — it stopped on \"\(question)\" "
+                    + "and waited. Run it with its own interface and answer it."
             }
         }
     }
@@ -770,6 +776,19 @@ public actor InstallPipeline {
                 }
             engine.waitForServerIdle()
             lastLog = Self.meaningfulTail(result.stdout + result.stderr)
+
+            // The installer put a dialogue on screen and sat waiting on it.
+            // Trying the next set of silent flags is pointless — it is not
+            // failing, it is asking — and so is waiting, because nobody is
+            // going to answer a window that /VERYSILENT has made one pixel
+            // wide. Stop, and let the caller offer the installer's own
+            // interface, which is the only thing that can get past this.
+            if let question = result.waitingOn {
+                engine.killServer()
+                warnings.append("The installer stopped to ask something (\"\(question)\"). "
+                    + "It needs to be run with its own interface.")
+                throw PipelineError.installerNeedsAttention(question)
+            }
 
             if installedSomething(at: targetURL) { return targetURL }
             // Installers that ignore our target directory still install; go

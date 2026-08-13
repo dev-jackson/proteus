@@ -131,6 +131,24 @@ final class InstallLivenessTests: XCTestCase {
         XCTAssertLessThan(WineEngine.workingCPUThreshold, 100)
     }
 
+    /// A silent installer that is not silent: it puts up a dialogue and spins
+    /// in its message pump waiting for an answer. Sampled from a real one that
+    /// had been at 100% CPU for minutes with nothing on disk — the busy thread
+    /// was in NtUserPeekMessage → NtYieldExecution, and it owned a window
+    /// titled "Setup" measuring one pixel square.
+    func testADeadProcessOwnsNoDialogue() {
+        XCTAssertNil(WineEngine.dialogTitle(inTreeOf: 999_999))
+    }
+
+    /// Untitled windows must not count. Wine keeps `explorer.exe /desktop`
+    /// alive with one for the whole session, so "has a window" is always true
+    /// and would report every install as waiting for input.
+    func testThisProcessTreeIsNotMistakenForOneAwaitingAnAnswer() {
+        // The test runner owns no titled window, but it does own the untitled
+        // machinery any AppKit-linked process has.
+        XCTAssertNil(WineEngine.dialogTitle(inTreeOf: ProcessInfo.processInfo.processIdentifier))
+    }
+
     /// The cap that caused the bug, demonstrated rather than asserted.
     ///
     /// A capped walk stops counting once it has seen `limit` files, so the

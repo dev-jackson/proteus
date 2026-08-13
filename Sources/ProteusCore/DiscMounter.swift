@@ -97,12 +97,19 @@ public enum Shell {
         /// True when we stopped the process at the timeout rather than it
         /// finishing on its own. For a smoke test that is the success case.
         public let timedOut: Bool
+        /// The title of a dialogue the program put on screen and then sat
+        /// waiting on. Set when a "silent" installer turned out not to be:
+        /// it stopped writing files and started asking a question nobody was
+        /// there to answer.
+        public let waitingOn: String?
 
-        init(exitCode: Int32, stdout: String, stderr: String, timedOut: Bool = false) {
+        init(exitCode: Int32, stdout: String, stderr: String, timedOut: Bool = false,
+             waitingOn: String? = nil) {
             self.exitCode = exitCode
             self.stdout = stdout
             self.stderr = stderr
             self.timedOut = timedOut
+            self.waitingOn = waitingOn
         }
     }
 
