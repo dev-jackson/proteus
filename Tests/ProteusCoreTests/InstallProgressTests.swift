@@ -20,13 +20,14 @@ final class InstallProgressTests: XCTestCase {
     /// `installed` defaults to `bytes` for the simple case where an installer
     /// writes straight to the destination with no staging.
     private func stage(bytes: Int64, working: Bool, estimate: Int64,
-                       installed: Int64? = nil) -> InstallPipeline.Stage {
+                       installed: Int64? = nil, waitingOn: String? = nil) -> InstallPipeline.Stage {
         InstallPipeline.installProgress(
             name: "Test Game",
             activity: WineEngine.InstallActivity(bytes: bytes,
                                                  installed: installed ?? bytes,
                                                  working: working,
-                                                 cpu: working ? 120 : 0),
+                                                 cpu: working ? 120 : 0,
+                                                 waitingOn: waitingOn),
             estimate: estimate,
             framework: .innoSetup,
             began: Date(timeIntervalSinceNow: -90))
@@ -85,6 +86,22 @@ final class InstallProgressTests: XCTestCase {
         XCTAssertTrue(progress.en.lowercased().contains("unpacking"), progress.en)
         XCTAssertTrue(progress.es.lowercased().contains("descomprimiendo"), progress.es)
         XCTAssertTrue(progress.en.contains("700 MB"), progress.en)
+    }
+
+    /// A dialogue outranks every other state. Whatever the byte count is
+    /// doing, the useful thing to tell someone watching a stopped bar is that
+    /// the installer is asking a question — and to say it immediately, not
+    /// after the five minutes it takes to conclude nobody will answer.
+    func testADialogueIsAnnouncedAtOnceAndOutranksTheOtherStates() {
+        let progress = stage(bytes: 900_000_000, working: true,
+                             estimate: 1_000_000_000, installed: 0, waitingOn: "Setup")
+
+        XCTAssertNil(progress.fraction)
+        XCTAssertTrue(progress.en.contains("asking something"), progress.en)
+        XCTAssertTrue(progress.en.contains("Setup"), "it has to name the dialogue")
+        XCTAssertTrue(progress.es.contains("preguntando algo"), progress.es)
+        XCTAssertFalse(progress.en.lowercased().contains("extracting"),
+                       "it is not extracting; saying so would be a guess")
     }
 
     func testTheByteCountSurvivesEvenWithNoEstimate() {

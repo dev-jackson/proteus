@@ -926,6 +926,17 @@ public actor InstallPipeline {
                                 began: Date) -> Stage {
         let elapsed = "\(framework.rawValue) · \(Self.elapsed(since: began))"
 
+        // Said the moment a dialogue appears, before any decision is taken
+        // about it. A person watching a bar that has stopped needs to know
+        // *now* that the installer is asking something — not in five minutes,
+        // when the code finally concludes it will never be answered.
+        if let question = activity.waitingOn {
+            return .init(en: "\(name) is asking something (\"\(question)\") — waiting",
+                         es: "\(name) está preguntando algo (\"\(question)\") — esperando",
+                         fraction: nil,
+                         detail: elapsed)
+        }
+
         if activity.working {
             let size = activity.bytes > 0 ? " — \(Self.readableSize(activity.bytes))" : ""
             return .init(en: "Extracting \(name)\(size) — this part can take a while",

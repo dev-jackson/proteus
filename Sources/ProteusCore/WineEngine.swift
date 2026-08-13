@@ -146,6 +146,23 @@ public struct WineEngine {
                                     destination: URL,
                                     watching: [URL],
                                     stallFor: TimeInterval = 900,
+                                    // How long a dialogue may sit there, with
+                                    // nothing being written, before the silent
+                                    // attempt is abandoned.
+                                    //
+                                    // This is only the *giving up* deadline.
+                                    // The dialogue itself is reported the
+                                    // moment it appears, so nobody spends this
+                                    // long wondering whether anything is wrong.
+                                    //
+                                    // Five minutes is a judgement, not a
+                                    // measurement, and it is deliberately on
+                                    // the generous side. Being early costs an
+                                    // interrupted install that has to be
+                                    // resumed by hand; being late costs a wait
+                                    // the person has already been warned about.
+                                    // Of those two, the wait is the cheaper
+                                    // mistake.
                                     promptAfter: TimeInterval = 300,
                                     hardCap: TimeInterval = 6 * 3600,
                                     workingDirectory: URL? = nil,
@@ -235,6 +252,10 @@ public struct WineEngine {
             let family = Self.processes(inBundle: wrapper.bundle.path)
             let cpu = family.cpu
             let busy = cpu >= Self.workingCPUThreshold
+            // Looked for every cycle, not only once the deadline is near. A
+            // dialogue during a *silent* install is worth saying out loud the
+            // moment it appears — see the note on `promptAfter`.
+            let dialogue = Self.dialogTitle(ownedBy: family.pids)
 
             if grew {
                 lastSize = size
@@ -258,8 +279,7 @@ public struct WineEngine {
             // happily wait forever. Disk growth is the honest measure of
             // progress, and a titled window is the evidence of what it is
             // waiting for.
-            if now.timeIntervalSince(lastGrowth) > promptAfter,
-               let title = Self.dialogTitle(ownedBy: family.pids) {
+            if now.timeIntervalSince(lastGrowth) > promptAfter, let title = dialogue {
                 waitingOn = title
                 break
             }
@@ -270,7 +290,8 @@ public struct WineEngine {
                 progress(InstallActivity(bytes: max(size, 0),
                                          installed: installed,
                                          working: !grew && busy,
-                                         cpu: cpu))
+                                         cpu: cpu,
+                                         waitingOn: dialogue))
             } else if now.timeIntervalSince(lastActivity) > stallFor {
                 timedOut = true
                 break
@@ -306,12 +327,17 @@ public struct WineEngine {
         public let working: Bool
         /// Combined CPU of the installer's process tree, in percent.
         public let cpu: Double
+        /// The title of a dialogue the installer has put on screen. Reported
+        /// the moment it appears — long before any decision is made about it.
+        public let waitingOn: String?
 
-        public init(bytes: Int64, installed: Int64 = 0, working: Bool = false, cpu: Double = 0) {
+        public init(bytes: Int64, installed: Int64 = 0, working: Bool = false,
+                    cpu: Double = 0, waitingOn: String? = nil) {
             self.bytes = bytes
             self.installed = installed
             self.working = working
             self.cpu = cpu
+            self.waitingOn = waitingOn
         }
     }
 
