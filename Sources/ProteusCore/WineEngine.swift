@@ -135,7 +135,14 @@ public struct WineEngine {
     ///   - stallFor: how long to allow with no growth before giving up.
     ///   - hardCap: an absolute ceiling, so a runaway process still ends.
     @discardableResult
+    /// - Parameters:
+    ///   - destination: where the game will end up. Measured separately,
+    ///     because it is the only directory whose size means "how much of this
+    ///     game is installed".
+    ///   - watching: the staging areas as well — temp folders an installer
+    ///     unpacks into before copying across.
     public func runWatchingProgress(_ arguments: [String],
+                                    destination: URL,
                                     watching: [URL],
                                     stallFor: TimeInterval = 900,
                                     hardCap: TimeInterval = 6 * 3600,
@@ -168,6 +175,11 @@ public struct WineEngine {
         var lastActivity = Date()
         var lastSample = Date.distantPast
         var timedOut = false
+        // The destination is measured whether or not the caller listed it.
+        let allWatched = ([destination] + watching).reduce(into: [URL]()) { unique, url in
+            if !unique.contains(where: { $0.path == url.path }) { unique.append(url) }
+        }
+        var peak: [String: Int64] = [:]
 
         while process.isRunning {
             Thread.sleep(forTimeInterval: 5)
@@ -180,13 +192,26 @@ public struct WineEngine {
             guard now.timeIntervalSince(lastSample) > 4 || lastSize < 0 else { continue }
             lastSample = now
 
-            // The largest single directory, not the sum. Inno Setup unpacks
-            // into the Windows temp folder and *then* copies into place, so
-            // adding them counts the same bytes twice, races past any sensible
-            // estimate and pins the bar at 99% for the rest of the install.
-            // The front of the work is whichever directory is currently
-            // biggest.
-            let size = watching.map { Self.directorySize($0) }.max() ?? 0
+            // A high-water mark per directory, summed.
+            //
+            // The obvious readings both fail. Summing current sizes counts the
+            // same bytes twice while a staged copy is in flight, and collapses
+            // when the installer deletes its temp folder — the number goes
+            // *backwards*. Taking the largest directory instead freezes for the
+            // entire copy phase: the destination has to grow past whatever the
+            // temp folder reached before the display moves at all, which on a
+            // large game is many minutes of a number that will not budge.
+            //
+            // High-water marks fix both. Every directory contributes the most
+            // it ever held, so the total only ever rises, and it rises the
+            // moment *any* of them grows — during extraction and during the
+            // copy that follows.
+            for directory in allWatched {
+                let size = Self.directorySize(directory)
+                if size > (peak[directory.path] ?? 0) { peak[directory.path] = size }
+            }
+            let size = peak.values.reduce(0, +)
+            let installed = peak[destination.path] ?? 0
             let grew = size > lastSize
 
             // Bytes on disk are not the only sign of life, and treating them
@@ -215,6 +240,7 @@ public struct WineEngine {
                 // `working` tells the caller to stop showing a percentage that
                 // cannot move, and say what is actually happening instead.
                 progress(InstallActivity(bytes: max(size, 0),
+                                         installed: installed,
                                          working: !grew && busy,
                                          cpu: cpu))
             } else if now.timeIntervalSince(lastActivity) > stallFor {
@@ -243,15 +269,19 @@ public struct WineEngine {
     /// growing byte count can drive a percentage, whereas a process working
     /// hard on nothing visible can only be reported honestly as "still going".
     public struct InstallActivity: Sendable {
-        /// Bytes written so far, by the largest watched directory.
+        /// Every byte the installer has written anywhere, ever. Only goes up.
         public let bytes: Int64
+        /// Bytes that have reached the place the game will actually live.
+        /// This, and not `bytes`, is what a percentage should be measured on.
+        public let installed: Int64
         /// Busy, but with nothing to show for it yet — decompressing.
         public let working: Bool
         /// Combined CPU of the installer's process tree, in percent.
         public let cpu: Double
 
-        public init(bytes: Int64, working: Bool = false, cpu: Double = 0) {
+        public init(bytes: Int64, installed: Int64 = 0, working: Bool = false, cpu: Double = 0) {
             self.bytes = bytes
+            self.installed = installed
             self.working = working
             self.cpu = cpu
         }

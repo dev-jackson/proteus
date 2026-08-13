@@ -16,10 +16,16 @@ import XCTest
 /// avoided, so the wording rules are pinned down here.
 final class InstallProgressTests: XCTestCase {
 
-    private func stage(bytes: Int64, working: Bool, estimate: Int64) -> InstallPipeline.Stage {
+    /// `installed` defaults to `bytes` for the simple case where an installer
+    /// writes straight to the destination with no staging.
+    private func stage(bytes: Int64, working: Bool, estimate: Int64,
+                       installed: Int64? = nil) -> InstallPipeline.Stage {
         InstallPipeline.installProgress(
             name: "Test Game",
-            activity: WineEngine.InstallActivity(bytes: bytes, working: working, cpu: working ? 120 : 0),
+            activity: WineEngine.InstallActivity(bytes: bytes,
+                                                 installed: installed ?? bytes,
+                                                 working: working,
+                                                 cpu: working ? 120 : 0),
             estimate: estimate,
             framework: .innoSetup,
             began: Date(timeIntervalSinceNow: -90))
@@ -52,6 +58,32 @@ final class InstallProgressTests: XCTestCase {
                      "within 5% of the estimate is already untrustworthy")
         XCTAssertNil(InstallPipeline.installShare(bytes: 100, estimate: 0),
                      "no estimate means no percentage, not a division by zero")
+    }
+
+    /// The freeze that prompted all of this. An installer unpacks 6.9 GB into
+    /// a temp folder while the game directory holds 3.1 GB, and a percentage
+    /// measured on the larger number does not move for the whole copy phase —
+    /// the destination has to overtake the temp folder before anything changes.
+    func testThePercentageFollowsTheDestinationNotTheTotalWritten() {
+        // 900 MB written in total, but only 200 MB of it is the actual game.
+        let progress = stage(bytes: 900_000_000, working: false,
+                             estimate: 1_000_000_000, installed: 200_000_000)
+
+        XCTAssertEqual(progress.fraction ?? 0, 0.20, accuracy: 0.01,
+                       "90% would be a lie while the game directory is a fifth full")
+        XCTAssertTrue(progress.en.contains("200 MB"), progress.en)
+    }
+
+    /// Before anything reaches the destination there is no honest percentage,
+    /// but there is a real byte count and it must still be shown.
+    func testUnpackingShowsBytesWithoutInventingAPercentage() {
+        let progress = stage(bytes: 700_000_000, working: false,
+                             estimate: 1_000_000_000, installed: 0)
+
+        XCTAssertNil(progress.fraction)
+        XCTAssertTrue(progress.en.lowercased().contains("unpacking"), progress.en)
+        XCTAssertTrue(progress.es.lowercased().contains("descomprimiendo"), progress.es)
+        XCTAssertTrue(progress.en.contains("700 MB"), progress.en)
     }
 
     func testTheByteCountSurvivesEvenWithNoEstimate() {

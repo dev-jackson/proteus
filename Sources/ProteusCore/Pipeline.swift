@@ -727,6 +727,7 @@ public actor InstallPipeline {
             let estimate = estimatedSize(for: source, installer: installer)
             let result = try engine.runWatchingProgress(
                 MSIPackage.silentArguments(for: installer, targetWindowsPath: targetWindows),
+                destination: targetURL,
                 watching: watchedDirectories(wrapper, target: targetURL),
                 workingDirectory: installer.deletingLastPathComponent()) { activity in
                     progress(Self.installProgress(name: name, activity: activity,
@@ -760,6 +761,7 @@ public actor InstallPipeline {
             let estimate = estimatedSize(for: source, installer: installer)
             let result = try engine.runWatchingProgress(
                 args,
+                destination: targetURL,
                 watching: watchedDirectories(wrapper, target: targetURL),
                 workingDirectory: installer.deletingLastPathComponent()) { activity in
                     progress(Self.installProgress(name: name, activity: activity,
@@ -913,10 +915,26 @@ public actor InstallPipeline {
                          detail: elapsed)
         }
 
-        let share = Self.installShare(bytes: activity.bytes, estimate: estimate)
+        // The percentage comes from the destination, not from everything the
+        // installer has written. Those are different numbers whenever an
+        // installer unpacks to a temp folder first, and only one of them means
+        // "how much of this game is installed" — measuring the other reaches
+        // 100% while the game directory is still half empty.
+        //
+        // Nothing has reached the destination yet: the installer is still
+        // unpacking, so there is a real byte count to show but no honest
+        // percentage to put beside it.
+        guard activity.installed > 0 else {
+            return .init(en: "Unpacking \(name) — \(Self.readableSize(activity.bytes))",
+                         es: "Descomprimiendo \(name) — \(Self.readableSize(activity.bytes))",
+                         fraction: nil,
+                         detail: elapsed)
+        }
+
+        let share = Self.installShare(bytes: activity.installed, estimate: estimate)
         let percent = share.map { " (\(Int($0 * 100))%)" } ?? ""
-        return .init(en: "Installing \(name) — \(Self.readableSize(activity.bytes))\(percent)",
-                     es: "Instalando \(name) — \(Self.readableSize(activity.bytes))\(percent)",
+        return .init(en: "Installing \(name) — \(Self.readableSize(activity.installed))\(percent)",
+                     es: "Instalando \(name) — \(Self.readableSize(activity.installed))\(percent)",
                      fraction: share,
                      detail: elapsed)
     }
