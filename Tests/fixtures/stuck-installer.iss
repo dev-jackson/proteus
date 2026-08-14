@@ -25,6 +25,25 @@
 ; nothing being written to disk, and a window titled "Setup" collapsed to one
 ; pixel square because silent mode gave it nowhere to be.
 ;
+; ## Why this is here at all: no free game reproduces it
+;
+; Four were tried, downloaded and run through Proteus:
+;
+;     OpenTTD (NSIS)                installs silently, no wait
+;     Warzone 2100 (Inno Setup)     installs silently, no wait
+;     VCMI (Inno, with components)  installs silently, no wait
+;     a truncated installer         exits, does not wait
+;
+; That is not bad luck. A project that publishes an installer makes it work
+; unattended, because administrators deploy it that way — supporting
+; `/VERYSILENT` is the whole point of offering it. An installer that stops to
+; ask a question no automated caller can answer is a defect, and free software
+; does not ship it.
+;
+; The behaviour belongs to repacks, which add an interactive unpacker on
+; purpose. So there is probably no free game with this shape to be found, and
+; looking harder is not the answer — building it is.
+;
 ; ## Status: incomplete
 ;
 ; Honest note, because a fixture that is believed to work and does not is worse
