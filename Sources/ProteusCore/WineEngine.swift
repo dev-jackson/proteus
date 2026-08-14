@@ -428,9 +428,18 @@ public struct WineEngine {
             let bounds = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
             let width = bounds["Width"] as? Double ?? 0
             let height = bounds["Height"] as? Double ?? 0
-            let collapsed = width > 0 && height > 0 && width <= 2 && height <= 2
 
-            guard collapsed else { continue }
+            // Wine gives every process a window for its virtual desktop, and
+            // during a silent install that is the *only* thing any of them
+            // has. Measured on a working install: three processes, three
+            // windows, all 500×500. Measured on a stuck one: a dialogue
+            // collapsed to 1×1, plus menu bars at 1512×33.
+            //
+            // So the desktop is the baseline and anything else is real
+            // interface — whether it is a hidden dialogue silent mode squashed
+            // or a wizard sitting in plain sight waiting to be clicked.
+            let isDesktop = width == Self.wineDesktopSize && height == Self.wineDesktopSize
+            guard width > 0, height > 0, !isDesktop else { continue }
             // A title, when the permission happens to be there, makes the
             // message concrete: "asking about Setup" beats "asking something".
             if let title, !title.isEmpty { return title }
@@ -438,6 +447,10 @@ public struct WineEngine {
         }
         return found ? "" : nil
     }
+
+    /// The size of wine's own virtual-desktop window, which every process gets
+    /// and which therefore means nothing on its own.
+    static let wineDesktopSize: Double = 500
 
     /// Above this, the installer is considered to be working rather than hung.
     ///

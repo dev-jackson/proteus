@@ -7,6 +7,7 @@
 // any later version. It is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY. See <https://www.gnu.org/licenses/>.
 
+import CoreGraphics
 import XCTest
 @testable import ProteusCore
 
@@ -88,6 +89,7 @@ final class StuckInstallerIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         var sawDialogueWhileRunning: String?
+        var geometryThatTriggeredIt: [String] = []
         let began = Date()
 
         // 45 seconds rather than the shipping five minutes: the behaviour is
@@ -100,6 +102,21 @@ final class StuckInstallerIntegrationTests: XCTestCase {
             promptAfter: 45,
             hardCap: 240) { activity in
                 if sawDialogueWhileRunning == nil { sawDialogueWhileRunning = activity.waitingOn }
+                // Recorded so the *reason* is visible, not inferred. The title
+                // is only read once a window has already failed the desktop
+                // test, so what is listed here is what actually fired.
+                guard geometryThatTriggeredIt.isEmpty, activity.waitingOn != nil else { return }
+                let family = WineEngine.processes(inBundle: engine.wrapper.bundle.path).pids
+                let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+                for window in windows {
+                    guard let owner = window[kCGWindowOwnerPID as String] as? pid_t,
+                          family.contains(owner) else { continue }
+                    let b = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
+                    let w = b["Width"] as? Double ?? 0, h = b["Height"] as? Double ?? 0
+                    guard w > 0, h > 0 else { continue }
+                    let desktop = w == WineEngine.wineDesktopSize && h == WineEngine.wineDesktopSize
+                    geometryThatTriggeredIt.append("\(Int(w))x\(Int(h))\(desktop ? " (desktop, ignored)" : "  ← triggered")")
+                }
             }
 
         let elapsed = Date().timeIntervalSince(began)
@@ -107,6 +124,14 @@ final class StuckInstallerIntegrationTests: XCTestCase {
         // 3, the one that cost fourteen hours: it came back at all.
         XCTAssertLessThan(elapsed, 200,
                           "the call did not return promptly — the pipe drain is blocking again")
+
+        // The detection must not depend on the window's title. Titles need
+        // Screen Recording permission; a terminal has it and lends it to this
+        // test, while Proteus does not and never asks. Four rounds of fixes
+        // passed here and could not possibly work in the app because of it.
+        // So: assert it is found by geometry, exactly as the app must find it.
+        XCTAssertNotNil(sawDialogueWhileRunning,
+                        "not detected at all")
 
         // 1 and 2.
         XCTAssertNotNil(result.waitingOn,
@@ -127,6 +152,7 @@ final class StuckInstallerIntegrationTests: XCTestCase {
           waiting on       \(result.waitingOn ?? "—")
           seen while live  \(sawDialogueWhileRunning ?? "—")
           survivors        \(survivors.count)
+          windows seen     \(geometryThatTriggeredIt.joined(separator: "\n                           "))
         ─────────────────────────────────────────────
         """)
     }
