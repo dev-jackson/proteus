@@ -51,6 +51,21 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
+    <!-- Games live in Downloads, on the Desktop, or on a disc. Without these,
+         macOS does not show a permission prompt — it simply makes the first
+         read block. Measured: the same analysis takes half a second from a
+         terminal that already has access, and about three minutes from the app
+         that does not, stalled at 0% CPU inside a directory enumeration with
+         the window saying "Looking at the game…".
+         The strings are what the person is asked, so they say why. -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Proteus reads the game you dropped on it, and the files beside it, to work out what it needs.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Games are usually downloaded, so this is where Proteus looks for the one you dropped on it.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Proteus reads the game you dropped on it, and the files beside it, to work out what it needs.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>Proteus reads game discs and USB drives to find the installer on them.</string>
     <key>NSHumanReadableCopyright</key><string>Copyright (C) 2026 Jackson Sánchez Rodríguez. GPL-3.0-or-later.</string>
     <!-- Accept a game dropped straight onto the Dock icon. -->
     <key>CFBundleDocumentTypes</key>
