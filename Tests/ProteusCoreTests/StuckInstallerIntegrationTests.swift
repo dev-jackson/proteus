@@ -44,6 +44,31 @@ final class StuckInstallerIntegrationTests: XCTestCase {
         return (WineEngine(wrapper: wrapper), installer)
     }
 
+    /// Points the real detector at a bundle that is installing right now, and
+    /// says what it sees. Used to confirm against a live case rather than a
+    /// contrived one:
+    ///
+    ///     PROTEUS_INTEGRATION=1 PROTEUS_PROBE=/Applications/Something.app \
+    ///       swift test --filter testWhatTheDetectorSeesRightNow
+    func testWhatTheDetectorSeesRightNow() throws {
+        guard ProcessInfo.processInfo.environment["PROTEUS_INTEGRATION"] == "1",
+              let path = ProcessInfo.processInfo.environment["PROTEUS_PROBE"] else {
+            throw XCTSkip("set PROTEUS_INTEGRATION=1 and PROTEUS_PROBE=<bundle>")
+        }
+        let family = WineEngine.processes(inBundle: path)
+        let dialogue = WineEngine.suppressedDialogue(ownedBy: family.pids)
+        print("""
+
+        ── live probe ───────────────────────────────
+          bundle     \(path)
+          processes  \(family.pids.count)
+          cpu        \(Int(family.cpu))%
+          dialogue   \(dialogue.map { $0.isEmpty ? "yes (title unavailable)" : "yes: \($0)" } ?? "none")
+        ─────────────────────────────────────────────
+        """)
+        XCTAssertFalse(family.pids.isEmpty, "nothing is running from \(path)")
+    }
+
     /// Run an installer with no silent flags, and it puts up its wizard and
     /// waits. Three things then have to happen, and each one was broken at
     /// some point:

@@ -97,11 +97,26 @@ final class InstallProgressTests: XCTestCase {
                              estimate: 1_000_000_000, installed: 0, waitingOn: "Setup")
 
         XCTAssertNil(progress.fraction)
-        XCTAssertTrue(progress.en.contains("asking something"), progress.en)
-        XCTAssertTrue(progress.en.contains("Setup"), "it has to name the dialogue")
-        XCTAssertTrue(progress.es.contains("preguntando algo"), progress.es)
+        XCTAssertTrue(progress.en.contains("waiting on a dialogue"), progress.en)
+        XCTAssertTrue(progress.en.contains("Setup"), "name it when the title could be read")
+        XCTAssertTrue(progress.es.contains("esperando un diálogo"), progress.es)
         XCTAssertFalse(progress.en.lowercased().contains("extracting"),
                        "it is not extracting; saying so would be a guess")
+    }
+
+    /// Window titles need Screen Recording permission, which Proteus does not
+    /// have and should not need in order to install a game. So the dialogue is
+    /// usually detected by its size with no title available, and the message
+    /// has to read properly without one — an empty pair of quotation marks
+    /// would look like a bug.
+    func testAnUnnamedDialogueStillReadsAsASentence() {
+        let progress = stage(bytes: 100, working: true, estimate: 1_000, waitingOn: "")
+
+        XCTAssertNil(progress.fraction)
+        XCTAssertTrue(progress.en.contains("waiting on a dialogue"), progress.en)
+        XCTAssertFalse(progress.en.contains("\"\""), "empty quotes: \(progress.en)")
+        XCTAssertFalse(progress.es.contains("\"\""), "empty quotes: \(progress.es)")
+        XCTAssertTrue(progress.en.contains("cannot install silently"), progress.en)
     }
 
     func testTheByteCountSurvivesEvenWithNoEstimate() {
@@ -155,8 +170,8 @@ final class InstallLivenessTests: XCTestCase {
     /// was in NtUserPeekMessage → NtYieldExecution, and it owned a window
     /// titled "Setup" measuring one pixel square.
     func testNoProcessesMeansNoDialogue() {
-        XCTAssertNil(WineEngine.dialogTitle(ownedBy: []))
-        XCTAssertNil(WineEngine.dialogTitle(ownedBy: [999_999]))
+        XCTAssertNil(WineEngine.suppressedDialogue(ownedBy: []))
+        XCTAssertNil(WineEngine.suppressedDialogue(ownedBy: [999_999]))
     }
 
     /// The bug that made every earlier attempt useless: wine detaches its
@@ -178,13 +193,13 @@ final class InstallLivenessTests: XCTestCase {
         XCTAssertTrue(WineEngine.processes(inBundle: "/nowhere/at/all").pids.isEmpty)
     }
 
-    /// Untitled windows must not count. Wine keeps `explorer.exe /desktop`
-    /// alive with one for the whole session, so "has a window" is always true
-    /// and would report every install as waiting for input.
+    /// Ordinary windows must not count. Wine keeps `explorer.exe /desktop`
+    /// alive with a 500×500 one for the whole session, and a working silent
+    /// install was measured with three windows and none of them collapsed.
     func testThisProcessIsNotMistakenForOneAwaitingAnAnswer() {
         // The test runner owns no titled window, but it does own the untitled
         // machinery any AppKit-linked process has.
-        XCTAssertNil(WineEngine.dialogTitle(ownedBy: [ProcessInfo.processInfo.processIdentifier]))
+        XCTAssertNil(WineEngine.suppressedDialogue(ownedBy: [ProcessInfo.processInfo.processIdentifier]))
     }
 
     /// The cap that caused the bug, demonstrated rather than asserted.

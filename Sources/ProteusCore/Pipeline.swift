@@ -931,8 +931,12 @@ public actor InstallPipeline {
         // *now* that the installer is asking something — not in five minutes,
         // when the code finally concludes it will never be answered.
         if let question = activity.waitingOn {
-            return .init(en: "\(name) is asking something (\"\(question)\") — waiting",
-                         es: "\(name) está preguntando algo (\"\(question)\") — esperando",
+            // Named only when the title could be read at all; see
+            // `suppressedDialogue`. Without Screen Recording it cannot be, and
+            // an empty pair of quotation marks would look like a bug.
+            let about = question.isEmpty ? "" : " (\"\(question)\")"
+            return .init(en: "\(name) is waiting on a dialogue\(about) — it cannot install silently",
+                         es: "\(name) está esperando un diálogo\(about) — no puede instalarse en silencio",
                          fraction: nil,
                          detail: elapsed)
         }

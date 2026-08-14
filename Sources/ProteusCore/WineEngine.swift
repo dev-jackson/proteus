@@ -262,7 +262,7 @@ public struct WineEngine {
             // Looked for every cycle, not only once the deadline is near. A
             // dialogue during a *silent* install is worth saying out loud the
             // moment it appears — see the note on `promptAfter`.
-            let dialogue = Self.dialogTitle(ownedBy: family.pids)
+            let dialogue = Self.suppressedDialogue(ownedBy: family.pids)
 
             if grew {
                 lastSize = size
@@ -387,20 +387,56 @@ public struct WineEngine {
     /// only a *named* one counts — a dialogue has a title, a desktop does not.
     /// The one that prompted this was called "Setup", and measured one pixel
     /// square, because /VERYSILENT hides a dialogue without answering it.
-    static func dialogTitle(ownedBy family: Set<pid_t>) -> String? {
+    /// Detected by *size*, because the title is not available to us.
+    ///
+    /// This was written against `kCGWindowName` and worked perfectly in a test
+    /// run from a terminal — and never once in the app. Window titles require
+    /// Screen Recording permission. The terminal had been granted it long ago
+    /// and quietly lent it to the test; Proteus has not, and never should have
+    /// to ask for it to install a game. Every title it reads comes back nil,
+    /// so the check could not fire, and four rounds of fixes sat behind a
+    /// condition that was false by construction.
+    ///
+    /// Window *bounds* need no permission at all. Measured against a silent
+    /// install that works and one that is stuck, on the same machine:
+    ///
+    ///     working   10 processes   3 windows   0 of 1×1
+    ///     stuck     10 processes  12 windows   1 of 1×1
+    ///
+    /// A window one pixel square is not something a person can see or click.
+    /// It exists because the installer created a dialogue and silent mode
+    /// collapsed it rather than answering it — which is exactly the condition
+    /// worth reporting. (The user/system CPU split was measured too, and is
+    /// useless: 42/58 working against 77/23 stuck, the opposite way round from
+    /// what one would guess.)
+    ///
+    /// - Returns: nil when nothing is waiting; otherwise the dialogue's title
+    ///   if we happen to be able to read it, or an empty string if not.
+    static func suppressedDialogue(ownedBy family: Set<pid_t>) -> String? {
         guard !family.isEmpty,
               let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]
         else { return nil }
 
+        var found = false
         for window in windows {
             guard let owner = window[kCGWindowOwnerPID as String] as? pid_t,
-                  family.contains(owner),
-                  let title = window[kCGWindowName as String] as? String,
-                  !title.trimmingCharacters(in: .whitespaces).isEmpty
-            else { continue }
-            return title
+                  family.contains(owner) else { continue }
+
+            let title = (window[kCGWindowName as String] as? String)?
+                .trimmingCharacters(in: .whitespaces)
+
+            let bounds = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
+            let width = bounds["Width"] as? Double ?? 0
+            let height = bounds["Height"] as? Double ?? 0
+            let collapsed = width > 0 && height > 0 && width <= 2 && height <= 2
+
+            guard collapsed else { continue }
+            // A title, when the permission happens to be there, makes the
+            // message concrete: "asking about Setup" beats "asking something".
+            if let title, !title.isEmpty { return title }
+            found = true
         }
-        return nil
+        return found ? "" : nil
     }
 
     /// Above this, the installer is considered to be working rather than hung.
@@ -431,6 +467,10 @@ public struct WineEngine {
     /// `…/SharedSupport/wine/Runtime.app/Contents/MacOS/`. A path inside this
     /// bundle is exact, cheap, and cannot be lost by reparenting.
     static func processes(inBundle bundlePath: String) -> (cpu: Double, pids: Set<pid_t>) {
+        // Resolved, because `proc_pidpath` always reports the real path and a
+        // bundle reached through a symlink would never match it. `/tmp` is
+        // `/private/tmp`, which is enough to make this silently find nothing.
+        let root = URL(fileURLWithPath: bundlePath).resolvingSymlinksInPath().path
         let listing = Shell.run("/bin/ps", ["-Ao", "pid=,pcpu="])
         guard listing.exitCode == 0 else { return (0, []) }
 
@@ -442,7 +482,7 @@ public struct WineEngine {
             let parts = line.split(separator: " ", omittingEmptySubsequences: true)
             guard parts.count >= 2, let pid = pid_t(parts[0]), let cpu = Double(parts[1]) else { continue }
             guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { continue }
-            guard String(cString: buffer).hasPrefix(bundlePath) else { continue }
+            guard String(cString: buffer).hasPrefix(root) else { continue }
             found.insert(pid)
             total += cpu
         }
