@@ -65,7 +65,14 @@ Uninstallable=no
 ; way, and would not belong in a repository.
 
 [Files]
-Source: "stuck-payload.txt"; DestDir: "{app}"
+; A real Windows GUI program, so that what this installs is something Proteus
+; can recognise as a game and go on to wrap, start and verify. With only text
+; files here the install completed and then failed honestly with "no game
+; program appeared" — correct, and useless for exercising the rest of the run.
+;
+; Compil32 ships with Inno Setup, is free software, and does the one thing
+; required of a stand-in: it is a PE that opens a window.
+Source: "Compil32.exe"; DestDir: "{app}"; DestName: "StuckSample.exe"
 Source: "stuck-payload.txt"; DestDir: "{app}"; DestName: "selective-english.txt"
 Source: "stuck-payload.txt"; DestDir: "{app}"; DestName: "selective-french.txt"
 
