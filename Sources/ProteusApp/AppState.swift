@@ -142,6 +142,20 @@ final class AppState: ObservableObject {
                 currentRun = nil
                 phase = .done(outcome)
                 refreshLibrary()
+            } catch let error as InstallPipeline.PipelineError {
+                guard currentRun == runID else { return }
+                currentRun = nil
+                // Not a dead end. This failure arrives with the half-built app
+                // and the installer to run inside it, so it gets a screen that
+                // offers to do that rather than a red cross and a "Try again"
+                // that would take the identical silent path and stop in the
+                // identical place.
+                if case .installerNeedsAttention(_, let app, let installer) = error {
+                    phase = .needsInstallerUI(message: readable(error), app: app, installer: installer)
+                } else {
+                    phase = .failed(readable(error))
+                }
+                refreshLibrary()
             } catch {
                 guard currentRun == runID else { return }
                 currentRun = nil

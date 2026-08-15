@@ -150,20 +150,29 @@ public struct WineEngine {
                                     // nothing being written, before the silent
                                     // attempt is abandoned.
                                     //
-                                    // This is only the *giving up* deadline.
-                                    // The dialogue itself is reported the
-                                    // moment it appears, so nobody spends this
-                                    // long wondering whether anything is wrong.
+                                    // Fifteen seconds, and it was five
+                                    // minutes. "Who wants to wait five
+                                    // minutes?" — nobody, and there was never
+                                    // a reason to. The dialogue is spotted in
+                                    // about five; everything after that was
+                                    // caution about interrupting an installer
+                                    // that might still have been working.
                                     //
-                                    // Five minutes is a judgement, not a
-                                    // measurement, and it is deliberately on
-                                    // the generous side. Being early costs an
-                                    // interrupted install that has to be
-                                    // resumed by hand; being late costs a wait
-                                    // the person has already been warned about.
-                                    // Of those two, the wait is the cheaper
-                                    // mistake.
-                                    promptAfter: TimeInterval = 300,
+                                    // Measuring a working install removed the
+                                    // need for the caution entirely. It opens
+                                    // no window at all beyond wine's virtual
+                                    // desktop: three processes, three windows,
+                                    // every one of them 500×500. A window that
+                                    // is not the desktop, while nothing
+                                    // whatever is being written, is already
+                                    // the answer.
+                                    //
+                                    // What is left is one more sampling cycle,
+                                    // so that something which merely flashes
+                                    // up and goes away is not mistaken for
+                                    // something waiting. That is all the delay
+                                    // is for, and it is the whole of it.
+                                    promptAfter: TimeInterval = 15,
                                     hardCap: TimeInterval = 6 * 3600,
                                     workingDirectory: URL? = nil,
                                     progress: (InstallActivity) -> Void = { _ in }) throws -> Shell.Result {
