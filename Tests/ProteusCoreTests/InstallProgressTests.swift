@@ -227,3 +227,30 @@ final class InstallLivenessTests: XCTestCase {
         XCTAssertEqual(whole, 40_000, "uncapped, every byte is counted")
     }
 }
+
+/// The path that turned "run it with its interface" into a button that did
+/// nothing at all.
+final class InteractiveInstallerPathTests: XCTestCase {
+
+    /// An installer sitting in Downloads — which is where every installer
+    /// sits — is not inside the wrapper, so the C: mapping cannot name it.
+    /// `windowsPath` returning nil used to end the function early, silently,
+    /// and the window the person was told to answer never appeared.
+    func testAnInstallerOutsideTheWrapperStillGetsAWindowsPath() {
+        let wrapper = Wrapper(bundle: URL(fileURLWithPath: "/Applications/Game.app"))
+        let installer = URL(fileURLWithPath: "/Users/someone/Downloads/setup.exe")
+
+        XCTAssertNil(wrapper.windowsPath(for: installer),
+                     "it is outside C: — that is the premise of this test")
+
+        let fallback = InstallPipeline.zDrivePath(for: installer)
+        XCTAssertEqual(fallback, "Z:\\Users\\someone\\Downloads\\setup.exe")
+    }
+
+    func testAnInstallerInsideTheWrapperKeepsItsDriveCPath() {
+        let wrapper = Wrapper(bundle: URL(fileURLWithPath: "/Applications/Game.app"))
+        let inside = wrapper.driveC.appendingPathComponent("Games/Thing/setup.exe")
+
+        XCTAssertEqual(wrapper.windowsPath(for: inside), "C:\\Games\\Thing\\setup.exe")
+    }
+}

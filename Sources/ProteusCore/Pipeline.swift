@@ -61,8 +61,10 @@ public actor InstallPipeline {
         case installerFailed(String)
         case notEnoughSpace(needed: Int64, free: Int64)
         /// The installer is not failing, it is asking — and a silent install
-        /// has nobody to answer it.
-        case installerNeedsAttention(String)
+        /// has nobody to answer it. Carries the half-built app, because the
+        /// only way past this is to run the installer inside it with its
+        /// interface showing, and that app must therefore survive.
+        case installerNeedsAttention(question: String, app: URL, installer: URL)
 
         public var description: String {
             switch self {
@@ -73,9 +75,13 @@ public actor InstallPipeline {
             case .notEnoughSpace(let needed, let free):
                 return "this game needs about \(InstallPipeline.readableSize(needed)) and there is only "
                     + "\(InstallPipeline.readableSize(free)) free. Free up some space and try again."
-            case .installerNeedsAttention(let question):
-                return "this installer will not run unattended — it stopped on \"\(question)\" "
-                    + "and waited. Run it with its own interface and answer it."
+            case .installerNeedsAttention(let question, _, _):
+                // Named only when the title could be read; without Screen
+                // Recording permission it cannot be, and an empty pair of
+                // quotation marks reads as a bug rather than as a fact.
+                let about = question.isEmpty ? "" : " on \"\(question)\""
+                return "this installer will not run unattended — it stopped\(about) and waited. "
+                    + "It needs to be run with its own interface so someone can answer it."
             }
         }
     }
@@ -363,8 +369,18 @@ public actor InstallPipeline {
         let gameDir: URL
         if source.needsInstaller {
             progress(.init(en: "Running the installer", es: "Ejecutando el instalador", fraction: 0.72))
-            gameDir = try runInstaller(source: source, wrapper: wrapper, engine: engine,
-                                       name: gameName, warnings: &warnings, progress: progress)
+            do {
+                gameDir = try runInstaller(source: source, wrapper: wrapper, engine: engine,
+                                           name: gameName, warnings: &warnings, progress: progress)
+            } catch let error as PipelineError {
+                // An installer that stopped to ask is the one failure where
+                // the half-built app must survive: running that installer
+                // again, with its interface showing, is the only way past it,
+                // and it has to be run inside this wrapper. Rolling back would
+                // leave the person holding an explanation and no way to act.
+                if case .installerNeedsAttention = error { succeeded = true }
+                throw error
+            }
         } else {
             progress(.init(en: "Copying game files", es: "Copiando archivos del juego", fraction: 0.72))
             gameDir = try copyPortable(source: source, into: wrapper, name: gameName)
@@ -675,10 +691,27 @@ public actor InstallPipeline {
     public func runInstallerInteractively(app: URL, installer: URL) throws {
         let wrapper = Wrapper(bundle: app)
         let engine = WineEngine(wrapper: wrapper)
-        guard let winPath = wrapper.windowsPath(for: installer) else { return }
+
+        // The installer is almost never inside the wrapper — it is wherever the
+        // person keeps their downloads. `windowsPath` only maps C:, so it
+        // returned nil for the ordinary case and the guard turned the whole
+        // function into a silent no-op: the window never appeared, and the
+        // report was "you never see the installer", which was exactly right.
+        //
+        // Wine maps the entire filesystem as Z:, which is how the silent run
+        // reached this same file in the first place.
+        let winPath = wrapper.windowsPath(for: installer) ?? Self.zDrivePath(for: installer)
+
+        // Nothing hidden and nothing answered on the person's behalf: this is
+        // the run where they are supposed to see it and decide.
         _ = try engine.run([winPath], timeout: 3600)
         engine.waitForServerIdle()
         engine.killServer()
+    }
+
+    /// A macOS path as Wine sees it on the Z: drive.
+    static func zDrivePath(for url: URL) -> String {
+        "Z:" + url.standardizedFileURL.path.replacingOccurrences(of: "/", with: "\\")
     }
 
     // MARK: - Steps
@@ -785,9 +818,15 @@ public actor InstallPipeline {
             // interface, which is the only thing that can get past this.
             if let question = result.waitingOn {
                 engine.killServer()
-                warnings.append("The installer stopped to ask something (\"\(question)\"). "
+                warnings.append("The installer stopped to ask something. "
                     + "It needs to be run with its own interface.")
-                throw PipelineError.installerNeedsAttention(question)
+                // Kept inside the app, so `proteus fix` works on it later and
+                // the wrapper does not depend on a file in Downloads that the
+                // person may well tidy away. The original path is still used
+                // if copying fails — a stub of a stub helps nobody.
+                let reachable = stashInstaller(installer, in: wrapper) ?? installer
+                throw PipelineError.installerNeedsAttention(
+                    question: question, app: wrapper.bundle, installer: reachable)
             }
 
             if installedSomething(at: targetURL) { return targetURL }

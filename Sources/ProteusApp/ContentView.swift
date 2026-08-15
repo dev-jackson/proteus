@@ -46,6 +46,8 @@ struct ContentView: View {
             DoneCard(outcome: outcome)
         case .failed(let message):
             FailureCard(message: message)
+        case .needsInstallerUI(let message, let app, let installer):
+            NeedsInstallerUICard(message: message, app: app, installer: installer)
         }
     }
 
@@ -64,6 +66,7 @@ struct ContentView: View {
         case .installing: return "installing"
         case .done: return "done"
         case .failed: return "failed"
+        case .needsInstallerUI: return "needsInstallerUI"
         }
     }
 
@@ -372,6 +375,46 @@ struct DoneCard: View {
 }
 
 // MARK: - Failure
+
+/// The failure that is not a dead end.
+///
+/// An installer that stops to ask a question has not broken — it is waiting,
+/// and the answer is a person. Proteus can already run an installer with its
+/// interface visible; what was missing was saying so at the moment it matters,
+/// instead of showing the same red cross and a "Try again" that would take the
+/// identical silent path and stop in the identical place.
+struct NeedsInstallerUICard: View {
+    @EnvironmentObject var state: AppState
+    let message: String
+    let app: URL
+    let installer: URL
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "hand.raised.fill")
+                .font(.system(size: 42))
+                .foregroundStyle(.orange)
+            Text(S.installerAsksTitle).font(.title2.weight(.semibold))
+            Text(message)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 430)
+                .textSelection(.enabled)
+            Button(S.showInstaller) { state.showInstaller(app: app, installer: installer) }
+                .buttonStyle(.borderedProminent)
+            Text(S.showInstallerHint)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+            Button(S.cancel) { state.reset() }
+                .buttonStyle(.link)
+            Spacer()
+        }
+        .padding(30)
+    }
+}
 
 struct FailureCard: View {
     @EnvironmentObject var state: AppState

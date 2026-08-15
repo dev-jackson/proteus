@@ -115,6 +115,17 @@ enum S {
         Lang.pick("Saved. It takes effect next time you play.",
                   "Guardado. Se aplica la próxima vez que juegues.")
     }
+    static var installerAsksTitle: String {
+        Lang.pick("This installer is asking something", "Este instalador está preguntando algo")
+    }
+    static var showInstaller: String {
+        Lang.pick("Show me the installer", "Muéstrame el instalador")
+    }
+    static var showInstallerHint: String {
+        Lang.pick("Its own window will open. Answer it, and Proteus finishes the rest.",
+                  "Se abrirá su propia ventana. Respóndela y Proteus termina el resto.")
+    }
+
     static var close: String { Lang.pick("Close", "Cerrar") }
     static var doubleClickToPlay: String {
         Lang.pick("Double-click to play", "Doble clic para jugar")

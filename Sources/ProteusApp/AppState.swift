@@ -23,6 +23,9 @@ final class AppState: ObservableObject {
         case installing(InstallPipeline.Stage)
         case done(InstallPipeline.Outcome)
         case failed(String)
+        /// A failure with a way out: the installer refuses to run unattended,
+        /// and the half-built app is still there to run it in, visibly.
+        case needsInstallerUI(message: String, app: URL, installer: URL)
     }
 
     @Published var phase: Phase = .idle
@@ -78,6 +81,26 @@ final class AppState: ObservableObject {
                 guard !Task.isCancelled else { return }
                 editedName = analysis.name
                 phase = .review(analysis, source)
+            } catch {
+                phase = .failed(readable(error))
+            }
+        }
+    }
+
+    /// Runs an installer with its own interface, for the case where silent
+    /// mode has nobody to answer it. Blocks until the person finishes, then
+    /// completes the wrapper around whatever they installed.
+    func showInstaller(app: URL, installer: URL) {
+        phase = .installing(.init(en: "Opening the installer — answer it and it will carry on",
+                                  es: "Abriendo el instalador — respóndelo y seguirá",
+                                  fraction: nil))
+        currentTask = Task {
+            do {
+                try await pipeline.runInstallerInteractively(app: app, installer: installer)
+                let outcome = try await pipeline.finishInterrupted(app: app) { stage in
+                    Task { @MainActor in self.phase = .installing(stage) }
+                }
+                phase = .done(outcome)
             } catch {
                 phase = .failed(readable(error))
             }

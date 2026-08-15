@@ -44,26 +44,6 @@
 ; purpose. So there is probably no free game with this shape to be found, and
 ; looking harder is not the answer — building it is.
 ;
-; ## Status: incomplete
-;
-; Honest note, because a fixture that is believed to work and does not is worse
-; than none — that is the mistake this whole exercise came out of.
-;
-; This compiles and runs. It does **not** yet hang under
-; `/VERYSILENT /SUPPRESSMSGBOXES`, which is the behaviour being chased. Two
-; placements were tried: `InitializeSetup`, which runs before there is a GUI to
-; put a window on, and `CurStepChanged(ssInstall)`, which runs but whose
-; `ShowModal` returns immediately when Inno is in silent mode.
-;
-; So a real repack is doing something further: a custom unpacker with its own
-; window (ISDone.dll and similar are common), or a form shown from a thread
-; Inno's silent handling does not own. Finding out which is the remaining work.
-;
-; What is already reproducible for free, and what the integration test uses, is
-; OpenTTD's installer run *without* silent flags: a genuine installer sitting
-; on a genuine dialogue, detected by geometry at 298×134 while the wine desktop
-; windows at 500×500 are ignored.
-;
 ; ## Building it
 ;
 ;     ISCC.exe stuck-installer.iss
@@ -89,51 +69,17 @@ Source: "stuck-payload.txt"; DestDir: "{app}"
 Source: "stuck-payload.txt"; DestDir: "{app}"; DestName: "selective-english.txt"
 Source: "stuck-payload.txt"; DestDir: "{app}"; DestName: "selective-french.txt"
 
-[Code]
-// The component chooser, as a form the script owns.
-//
-// Inno's silent switches do not reach this. A repack that asks which language
-// packs to install does exactly this, and that is why such an installer sits
-// there forever under automation instead of failing.
-// Shown once the install is actually under way.
-//
-// `InitializeSetup` runs before there is a GUI to put a window on, and the
-// form never appears — the first attempt at this exited cleanly and proved
-// nothing. `ssInstall` is the moment a real repack asks which language packs
-// it should unpack, which is exactly where they stop.
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  Form: TSetupForm;
-  Prompt: TNewStaticText;
-  Proceed: TNewButton;
-begin
-  if CurStep <> ssInstall then Exit;
-  Form := TSetupForm.Create(nil);
-  try
-    Form.Caption := 'Setup';
-    Form.ClientWidth := ScaleX(320);
-    Form.ClientHeight := ScaleY(130);
-
-    Prompt := TNewStaticText.Create(Form);
-    Prompt.Parent := Form;
-    Prompt.Left := ScaleX(16);
-    Prompt.Top := ScaleY(20);
-    Prompt.Width := ScaleX(288);
-    Prompt.WordWrap := True;
-    Prompt.Caption := 'Choose which language packs to install.';
-
-    Proceed := TNewButton.Create(Form);
-    Proceed.Parent := Form;
-    Proceed.Left := ScaleX(220);
-    Proceed.Top := ScaleY(88);
-    Proceed.Width := ScaleX(84);
-    Proceed.Height := ScaleY(26);
-    Proceed.Caption := 'Continue';
-    Proceed.ModalResult := mrOk;
-
-    // Nothing answers this when no one is watching.
-    Form.ShowModal;
-  finally
-    Form.Free;
-  end;
-end;
+[Run]
+; This is the mechanism, and it is not a wizard page.
+;
+; `/VERYSILENT` governs Inno's own interface. It has no authority over a
+; *separate program* the installer is told to run and wait for — [Run] entries
+; execute in silent mode too, unless marked `skipifsilent`, and this one is
+; not. So Setup launches something with a window of its own and blocks until
+; it closes, which nobody is there to do.
+;
+; That is what a repack does with its unpacker: a second executable, its own
+; window, the installer waiting on it. Notepad stands in for the unpacker
+; because it ships with Wine and does the one thing that matters — it opens a
+; window and waits.
+Filename: "{sys}\notepad.exe"; Flags: waituntilterminated

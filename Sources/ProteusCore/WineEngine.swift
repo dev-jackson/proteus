@@ -448,6 +448,13 @@ public struct WineEngine {
         return found ? "" : nil
     }
 
+    /// The path with every symlink resolved, the way the kernel reports it.
+    static func realPath(_ path: String) -> String {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        guard realpath(path, &buffer) != nil else { return path }
+        return String(cString: buffer)
+    }
+
     /// The size of wine's own virtual-desktop window, which every process gets
     /// and which therefore means nothing on its own.
     static let wineDesktopSize: Double = 500
@@ -480,10 +487,15 @@ public struct WineEngine {
     /// `…/SharedSupport/wine/Runtime.app/Contents/MacOS/`. A path inside this
     /// bundle is exact, cheap, and cannot be lost by reparenting.
     static func processes(inBundle bundlePath: String) -> (cpu: Double, pids: Set<pid_t>) {
-        // Resolved, because `proc_pidpath` always reports the real path and a
-        // bundle reached through a symlink would never match it. `/tmp` is
-        // `/private/tmp`, which is enough to make this silently find nothing.
-        let root = URL(fileURLWithPath: bundlePath).resolvingSymlinksInPath().path
+        // Resolved with `realpath`, and not with `resolvingSymlinksInPath`,
+        // which was the first attempt and does not work.
+        //
+        // `proc_pidpath` always reports the real path — `/private/tmp/…` — and
+        // Foundation deliberately leaves `/tmp` alone, treating it as the
+        // canonical spelling. So the comparison silently matched nothing, the
+        // process list came back empty, and with it the CPU reading and the
+        // dialogue check. Caught by a reproduction installed under /tmp.
+        let root = Self.realPath(bundlePath)
         let listing = Shell.run("/bin/ps", ["-Ao", "pid=,pcpu="])
         guard listing.exitCode == 0 else { return (0, []) }
 
