@@ -157,3 +157,74 @@ final class StuckInstallerIntegrationTests: XCTestCase {
         """)
     }
 }
+
+/// "You never see the installer" — the report that mattered most, and the one
+/// a passing test suite had said nothing about.
+///
+///     PROTEUS_INTEGRATION=1 PROTEUS_WRAPPER=/Applications/OpenTTD.app \
+///       swift test --filter testTheInstallerActuallyAppears
+final class InteractiveInstallerAppearsTests: XCTestCase {
+
+    func testTheInstallerActuallyAppears() throws {
+        guard ProcessInfo.processInfo.environment["PROTEUS_INTEGRATION"] == "1",
+              let path = ProcessInfo.processInfo.environment["PROTEUS_WRAPPER"] else {
+            throw XCTSkip("set PROTEUS_INTEGRATION=1 and PROTEUS_WRAPPER=<bundle>")
+        }
+        let installer = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("test-games/stuck-installer.exe")
+        guard FileManager.default.fileExists(atPath: installer.path) else {
+            throw XCTSkip("build test-games/stuck-installer.exe first")
+        }
+
+        let app = URL(fileURLWithPath: path)
+        let pipeline = InstallPipeline(installRoot: app.deletingLastPathComponent())
+
+        // The installer lives outside the wrapper, which is the whole point:
+        // `windowsPath` cannot name it, and the old guard returned instead of
+        // launching anything at all.
+        XCTAssertNil(Wrapper(bundle: app).windowsPath(for: installer),
+                     "the installer must be outside the wrapper for this to mean anything")
+
+        // It blocks until the person closes it, so it runs alongside.
+        Thread.detachNewThread {
+            try? pipeline.runInstallerInteractively(app: app, installer: installer)
+        }
+        defer {
+            for pid in WineEngine.processes(inBundle: app.path).pids { kill(pid, SIGKILL) }
+        }
+
+        var seen: [String] = []
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline, seen.isEmpty {
+            Thread.sleep(forTimeInterval: 3)
+            let family = WineEngine.processes(inBundle: app.path).pids
+            guard let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]
+            else { continue }
+            for window in windows {
+                guard let owner = window[kCGWindowOwnerPID as String] as? pid_t,
+                      family.contains(owner) else { continue }
+                let b = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
+                let w = b["Width"] as? Double ?? 0, h = b["Height"] as? Double ?? 0
+                guard w > 0, h > 0,
+                      !(w == WineEngine.wineDesktopSize && h == WineEngine.wineDesktopSize) else { continue }
+                seen.append("\(Int(w))x\(Int(h))")
+            }
+        }
+
+        print("""
+
+        ── does the installer appear? ───────────────
+          windows       \(seen.isEmpty ? "none" : seen.joined(separator: ", "))
+        ─────────────────────────────────────────────
+        """)
+        XCTAssertFalse(seen.isEmpty,
+                       "no window appeared — the interactive run is a no-op again")
+
+        // The window is torn down the moment this returns, which is right for
+        // a test and useless for a person trying to see it. PROTEUS_HOLD keeps
+        // it on screen long enough to look at, or to photograph.
+        if let hold = ProcessInfo.processInfo.environment["PROTEUS_HOLD"].flatMap(Double.init) {
+            Thread.sleep(forTimeInterval: hold)
+        }
+    }
+}
